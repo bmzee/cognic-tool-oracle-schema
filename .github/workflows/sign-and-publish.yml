@@ -1,12 +1,15 @@
-# Reference workflow — runs `agentos validate` + `agentos sign --bundle`
-# + `agentos verify` on every push to main. AUTHOR-FILL: review +
-# customize the publish step for your registry.
+# Release signing workflow — runs `agentos validate` + `agentos sign --bundle`
+# + `agentos verify` to produce the signed attestation bundle. The publishing
+# (distribution) step is intentionally deferred until the Task 9 / release cut;
+# the sign + verify proof is recorded in docs/VALIDATION-RESULTS.md at release.
 
 name: sign-and-publish
 
+# Manual / release-gated: signing is Task 9 / operator work and needs the
+# supply-chain toolchain (cosign / syft / grype / pip-licenses) provisioned on
+# the runner first. Do NOT make this push-triggered until that hardening lands.
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   sign:
@@ -23,5 +26,5 @@ jobs:
       - run: agentos validate .
       - run: agentos sign --bundle .
       - run: agentos verify .
-      # AUTHOR-FILL: add a publishing step (e.g., upload to internal
-      # registry, twine to PyPI, push to OCI registry, etc.).
+      # Publishing step intentionally deferred until the Task 9 / release cut
+      # (the distribution target — internal registry / OCI / PyPI — is decided then).

@@ -1,9 +1,7 @@
 # Cognic AgentOS pack manifest — Wave-1 schema.
 #
-# Every "AUTHOR-FILL:" placeholder triggers a refusal from
-# `agentos validate` until you replace it with a real value.
-# Run `agentos validate .` after each round of edits to surface
-# remaining gaps.
+# Run `agentos validate .` to check this manifest against the kernel's
+# build-time trust gate.
 
 [pack]
 pack_id = "cognic-tool-oracle-schema"
@@ -21,7 +19,7 @@ provider_organization = "Cognic"
 provider_url = "https://github.com/bmzee/cognic-tool-oracle-schema"
 
 # OASF capability set — optional Wave-1 (warning, NOT refusal):
-# capability_set = ["AUTHOR-FILL: e.g., kyc.v1, retrieval.v1"]
+# capability_set = ["kyc.v1", "retrieval.v1"]
 
 [mcp]
 # Wave-1 MCP capabilities. Caching + elicitation_form on restricted
@@ -41,8 +39,8 @@ retention_policy = "none"
 # retention_max_window required when retention_policy != "none".
 # Positive number representing the retention period (units per
 # pack-author docs, typically days).
-# retention_max_window = 90  # AUTHOR-FILL: uncomment + set when policy != "none"
-egress_allow_list = []  # AUTHOR-FILL: e.g., ["api.example.com"]
+# retention_max_window = 90  # uncomment + set when retention_policy != "none"
+egress_allow_list = []  # empty: the pack makes no outbound HTTP calls (the Oracle connection is deployment config, not egress)
 
 [risk_tier]
 # ADR-014 risk tier. Must be consistent with the declared

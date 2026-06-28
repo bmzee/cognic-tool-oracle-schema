@@ -20,6 +20,8 @@ dependencies = [
 dev = [
     "pytest>=8",
     "pytest-asyncio>=1",
+    "ruff>=0.9",
+    "mypy>=1.14",
     # AgentOS authoring/governance CLI — author/CI-time only (validate/sign/verify).
     "cognic-agentos @ git+https://github.com/bmzee/cognic-agentos@v0.0.2",
 ]
@@ -45,3 +47,25 @@ packages = ["src/cognic_tool_oracle_schema"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = ["oracle: integration tests requiring a live Oracle XE (env-gated by COGNIC_RUN_ORACLE_INTEGRATION=1)"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# Conservative: ruff's default rule set (pyflakes + a safe pycodestyle
+# subset) made explicit — exactly what the committed tree already passes.
+# Intentionally NOT the kernel's broader E/W/I/B/UP/SIM/RUF set, which would
+# surface fresh violations (e.g. E501 line-length) in source this pack would
+# have to reformat. Widen deliberately in a follow-up once the tree is clean.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.mypy]
+python_version = "3.12"
+# Conservative: match the tree's current (default, non-strict) passing
+# behavior. The kernel runs `strict = true`, but enabling strict here surfaces
+# pre-existing [no-untyped-def] / [type-arg] findings in src + tests. These two
+# warnings add no new errors on the current tree; tighten in a follow-up.
+warn_unused_configs = true
+warn_redundant_casts = true
