@@ -16,10 +16,10 @@ class Config:
     oracle_dsn: str
     oracle_user: str
     oracle_password: str
-    allowed_owners: frozenset[str]          # empty = trust the DB grant
+    allowed_owners: frozenset[str]  # empty = trust the DB grant
     max_rows: int
     pool_max: int
-    auth_mode: str                           # "jwt" | "dev_insecure"
+    auth_mode: str  # "jwt" | "dev_insecure"
     oauth_issuer: str | None
     oauth_jwks_uri: str | None
     oauth_audience: str | None
@@ -57,7 +57,9 @@ class Config:
                 "COGNIC_OAUTH_JWKS_URI, COGNIC_OAUTH_AUDIENCE"
             )
         scopes = frozenset(
-            s.strip() for s in os.environ.get("COGNIC_REQUIRED_SCOPES", "oracle_schema.read").split(",") if s.strip()
+            s.strip()
+            for s in os.environ.get("COGNIC_REQUIRED_SCOPES", "oracle_schema.read").split(",")
+            if s.strip()
         )
         if not scopes:
             raise ConfigError("COGNIC_REQUIRED_SCOPES must contain at least one scope")
@@ -65,8 +67,12 @@ class Config:
             oracle_dsn=_req("COGNIC_ORACLE_DSN"),
             oracle_user=_req("COGNIC_ORACLE_USER"),
             oracle_password=_req("COGNIC_ORACLE_PASSWORD"),
-            allowed_owners=allowed, max_rows=max_rows,
+            allowed_owners=allowed,
+            max_rows=max_rows,
             pool_max=int(os.environ.get("COGNIC_ORACLE_POOL_MAX", "4")),
-            auth_mode=auth_mode, oauth_issuer=issuer, oauth_jwks_uri=jwks,
-            oauth_audience=audience, required_scopes=scopes,
+            auth_mode=auth_mode,
+            oauth_issuer=issuer,
+            oauth_jwks_uri=jwks,
+            oauth_audience=audience,
+            required_scopes=scopes,
         )

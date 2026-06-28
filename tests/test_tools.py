@@ -121,9 +121,7 @@ async def test_list_schemas_constrains_to_allowlist_via_generated_binds(monkeypa
 # --------------------------------------------------------------------------- #
 @pytest.mark.asyncio
 async def test_list_tables_binds_owner_value_and_maps_items(monkeypatch):
-    rec = _install_fetch(
-        monkeypatch, rows=[("EMP", "employees"), ("DEPT", None)], truncated=False
-    )
+    rec = _install_fetch(monkeypatch, rows=[("EMP", "employees"), ("DEPT", None)], truncated=False)
     out = await tools.list_tables(cfg=_cfg(allowed_owners=frozenset({"HR"})), owner="hr")
     assert "all_tables" in rec.sql  # (a)
     assert "all_tab_comments" in rec.sql  # (a)
@@ -264,9 +262,7 @@ async def test_find_columns_ownerless_no_allowlist_emits_1_eq_1(monkeypatch):
 async def test_list_relationships_without_table_omits_table_filter(monkeypatch):
     rows = [("FK1", "HR", "EMP", "DEPT_ID", "HR", "DEPT", "ID")]
     rec = _install_fetch(monkeypatch, rows=rows, truncated=False)
-    out = await tools.list_relationships(
-        cfg=_cfg(allowed_owners=frozenset({"HR"})), owner="hr"
-    )
+    out = await tools.list_relationships(cfg=_cfg(allowed_owners=frozenset({"HR"})), owner="hr")
     assert "all_constraints" in rec.sql  # (a)
     assert "all_cons_columns" in rec.sql  # (a)
     assert rec.binds == {"owner": "HR"}  # (b) only owner bound
@@ -302,9 +298,7 @@ async def test_list_relationships_with_table_adds_table_filter_bind(monkeypatch)
 async def test_list_relationships_refuses_owner_outside_allowlist(monkeypatch):
     rec = _install_fetch(monkeypatch)
     with pytest.raises(oracle.OwnerNotAllowed):  # (c)
-        await tools.list_relationships(
-            cfg=_cfg(allowed_owners=frozenset({"HR"})), owner="SECRET"
-        )
+        await tools.list_relationships(cfg=_cfg(allowed_owners=frozenset({"HR"})), owner="SECRET")
     assert rec.calls == []
 
 

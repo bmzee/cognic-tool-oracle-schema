@@ -31,9 +31,7 @@ _RUN_INTEGRATION = os.environ.get("COGNIC_RUN_ORACLE_INTEGRATION") == "1"
 _INTEGRATION_DIR = pathlib.Path(__file__).parent
 
 
-def pytest_collection_modifyitems(
-    config: pytest.Config, items: list[pytest.Item]
-) -> None:
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """Gate the whole integration package on ``COGNIC_RUN_ORACLE_INTEGRATION``.
 
     When not opted in, every test collected under ``tests/integration/`` is

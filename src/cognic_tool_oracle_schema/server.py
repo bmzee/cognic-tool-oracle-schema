@@ -70,7 +70,10 @@ def build_server(*, as_issuer: str) -> FastMCP:
         lifespan=_pool_lifespan,
     )
 
-    @mcp.tool(name="list_schemas", description="List distinct Oracle schema owners (constrained to the allow-list when set).")
+    @mcp.tool(
+        name="list_schemas",
+        description="List distinct Oracle schema owners (constrained to the allow-list when set).",
+    )
     async def list_schemas() -> dict:
         return await tools.list_schemas(cfg=cfg)
 
@@ -78,19 +81,31 @@ def build_server(*, as_issuer: str) -> FastMCP:
     async def list_tables(owner: str) -> dict:
         return await tools.list_tables(cfg=cfg, owner=owner)
 
-    @mcp.tool(name="describe_table", description="Describe a table's columns (type / nullability / default / comment).")
+    @mcp.tool(
+        name="describe_table",
+        description="Describe a table's columns (type / nullability / default / comment).",
+    )
     async def describe_table(owner: str, table: str) -> dict:
         return await tools.describe_table(cfg=cfg, owner=owner, table=table)
 
-    @mcp.tool(name="find_columns", description="Find columns by name LIKE pattern, optionally scoped to one owner.")
+    @mcp.tool(
+        name="find_columns",
+        description="Find columns by name LIKE pattern, optionally scoped to one owner.",
+    )
     async def find_columns(name_pattern: str, owner: str | None = None) -> dict:
         return await tools.find_columns(cfg=cfg, name_pattern=name_pattern, owner=owner)
 
-    @mcp.tool(name="list_relationships", description="List foreign-key relationships for one owner (optionally one table).")
+    @mcp.tool(
+        name="list_relationships",
+        description="List foreign-key relationships for one owner (optionally one table).",
+    )
     async def list_relationships(owner: str, table: str | None = None) -> dict:
         return await tools.list_relationships(cfg=cfg, owner=owner, table=table)
 
-    @mcp.tool(name="get_constraints", description="List all constraints (PK / UK / CK / FK) for one table.")
+    @mcp.tool(
+        name="get_constraints",
+        description="List all constraints (PK / UK / CK / FK) for one table.",
+    )
     async def get_constraints(owner: str, table: str) -> dict:
         return await tools.get_constraints(cfg=cfg, owner=owner, table=table)
 
@@ -98,6 +113,6 @@ def build_server(*, as_issuer: str) -> FastMCP:
 
 
 if __name__ == "__main__":
-    build_server(
-        as_issuer=os.environ.get("COGNIC_MCP_AS_ISSUER", "http://127.0.0.1:9000")
-    ).run(transport="streamable-http")
+    build_server(as_issuer=os.environ.get("COGNIC_MCP_AS_ISSUER", "http://127.0.0.1:9000")).run(
+        transport="streamable-http"
+    )

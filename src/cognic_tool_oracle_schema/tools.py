@@ -61,7 +61,9 @@ _GET_CONSTRAINTS = (
 )
 
 
-def _owner_predicate(column: str, cfg: Config, *, owner: str | None = None) -> tuple[str, dict[str, str]]:
+def _owner_predicate(
+    column: str, cfg: Config, *, owner: str | None = None
+) -> tuple[str, dict[str, str]]:
     """Build an owner predicate using bind variables only (never user values).
 
     - ``owner`` given → ``"<column> = :owner"`` with the guarded value.
@@ -124,8 +126,7 @@ async def find_columns(*, cfg: Config, name_pattern: str, owner: str | None = No
     binds = {"pat": name_pattern, **owner_binds}
     rows, truncated = await fetch(sql, binds, limit=cfg.max_rows)
     items = [
-        {"owner": r[0], "table_name": r[1], "column_name": r[2], "data_type": r[3]}
-        for r in rows
+        {"owner": r[0], "table_name": r[1], "column_name": r[2], "data_type": r[3]} for r in rows
     ]
     return {"items": items, "truncated": truncated}
 

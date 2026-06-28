@@ -14,8 +14,12 @@ class OwnerNotAllowed(ValueError):
 def init_pool(cfg: Config) -> None:
     global _pool
     _pool = oracledb.create_pool_async(
-        user=cfg.oracle_user, password=cfg.oracle_password, dsn=cfg.oracle_dsn,
-        min=1, max=cfg.pool_max, increment=1,
+        user=cfg.oracle_user,
+        password=cfg.oracle_password,
+        dsn=cfg.oracle_dsn,
+        min=1,
+        max=cfg.pool_max,
+        increment=1,
     )
 
 

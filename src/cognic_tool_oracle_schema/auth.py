@@ -20,8 +20,9 @@ class DevTokenVerifier(TokenVerifier):
     async def verify_token(self, token: str) -> AccessToken | None:
         if not token:
             return None
-        return AccessToken(token=token, client_id="dev", scopes=self._scopes,
-                           expires_at=None, resource=self._aud)
+        return AccessToken(
+            token=token, client_id="dev", scopes=self._scopes, expires_at=None, resource=self._aud
+        )
 
 
 class JwtTokenVerifier(TokenVerifier):
@@ -35,8 +36,11 @@ class JwtTokenVerifier(TokenVerifier):
     def _verify_sync(self, token: str) -> dict:
         signing_key = self._jwks.get_signing_key_from_jwt(token)
         return jwt.decode(
-            token, signing_key.key, algorithms=["RS256"],
-            audience=self._cfg.oauth_audience, issuer=self._cfg.oauth_issuer,
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=self._cfg.oauth_audience,
+            issuer=self._cfg.oauth_issuer,
             options={"require": ["exp", "iat", "nbf"]},
         )
 
@@ -51,8 +55,10 @@ class JwtTokenVerifier(TokenVerifier):
         if not self._cfg.required_scopes.issubset(granted):
             return None
         return AccessToken(
-            token=token, client_id=str(claims.get("azp") or claims.get("client_id") or "unknown"),
-            scopes=sorted(granted), expires_at=claims.get("exp"),
+            token=token,
+            client_id=str(claims.get("azp") or claims.get("client_id") or "unknown"),
+            scopes=sorted(granted),
+            expires_at=claims.get("exp"),
             resource=self._cfg.oauth_audience,
         )
 
