@@ -1,0 +1,54 @@
+# cognic-tool-oracle-schema — Oracle XE 21c integration substrate (DEV-ONLY).
+#
+# Brings up a throwaway Oracle XE for the env-gated integration tests
+# (tests/integration/, `pytest -m oracle`). The unit suite does NOT use this —
+# it is fake-cursor / no-DB. All values here are dev-only throwaways.
+#
+# Usage:
+#   docker compose -f docker-compose.oracle.yml up -d
+#   # First boot takes ~3-5 min while the DB initialises; wait for healthy:
+#   docker compose -f docker-compose.oracle.yml ps
+#   COGNIC_RUN_ORACLE_INTEGRATION=1 \
+#     COGNIC_ORACLE_DSN=localhost:1521/XEPDB1 \
+#     COGNIC_ORACLE_USER=cognic \
+#     COGNIC_ORACLE_PASSWORD=cognic_dev_only \
+#     .venv/bin/python -m pytest tests/integration -m oracle -q
+#   docker compose -f docker-compose.oracle.yml down -v
+#
+# gvenzl/oracle-xe is the standard community image (Oracle's own images are
+# licensed + huge). :21-slim is ~2 GB and needs ~2 GB RAM. On a fresh volume
+# gvenzl runs every *.sql in /container-entrypoint-initdb.d once, after the
+# database + the APP_USER are set up — so it seeds tests/fixtures/seed_schema.sql
+# (mounted below), which creates the demo schema the six tools read back.
+
+services:
+  oracle:
+    image: gvenzl/oracle-xe:21-slim
+    container_name: cognic-tool-oracle-schema-oracle
+    environment:
+      # SYS/SYSTEM admin password — DEV-ONLY, never reused outside dev.
+      ORACLE_PASSWORD: cognic_dev_only
+      # gvenzl creates this app user/schema in the XEPDB1 PDB at first boot.
+      APP_USER: cognic
+      # MUST match the CONNECT password in tests/fixtures/seed_schema.sql.
+      APP_USER_PASSWORD: cognic_dev_only
+    ports:
+      - "${COGNIC_ORACLE_PORT:-1521}:1521"
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+      # First-boot seed (read-only). gvenzl applies it once, after the DB and the
+      # APP_USER (cognic) exist, so the demo objects land in the cognic schema and
+      # are visible via the ALL_* views the tools query.
+      - ./tests/fixtures/seed_schema.sql:/container-entrypoint-initdb.d/seed_schema.sql:ro
+    healthcheck:
+      # gvenzl ships /opt/oracle/healthcheck.sh (a SQL*Plus connectivity probe).
+      # First boot takes ~3-5 minutes before it returns 0, hence the generous
+      # retries + start_period.
+      test: ["CMD", "/opt/oracle/healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 60          # generous for first-boot init
+      start_period: 120s   # don't fail the container while the DB initialises
+
+volumes:
+  oracle-data:

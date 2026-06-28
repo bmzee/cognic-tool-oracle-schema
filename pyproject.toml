@@ -44,3 +44,4 @@ packages = ["src/cognic_tool_oracle_schema"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = ["oracle: integration tests requiring a live Oracle XE (env-gated by COGNIC_RUN_ORACLE_INTEGRATION=1)"]
