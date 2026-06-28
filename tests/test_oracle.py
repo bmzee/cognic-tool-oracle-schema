@@ -4,27 +4,34 @@ from cognic_tool_oracle_schema import oracle
 from cognic_tool_oracle_schema.config import Config
 
 
-def _cfg(**kw) -> Config:
-    """Build a minimal, fully-populated ``Config``.
-
-    Every field is populated with a sensible default; ``allowed_owners`` and
-    ``max_rows`` (indeed any field) are overridable via ``**kw``.
-    """
-    defaults = {
-        "oracle_dsn": "localhost:1521/XEPDB1",
-        "oracle_user": "ro_user",
-        "oracle_password": "pw",
-        "allowed_owners": frozenset(),
-        "max_rows": 200,
-        "pool_max": 4,
-        "auth_mode": "dev_insecure",
-        "oauth_issuer": None,
-        "oauth_jwks_uri": None,
-        "oauth_audience": None,
-        "required_scopes": frozenset({"oracle_schema.read"}),
-    }
-    defaults.update(kw)
-    return Config(**defaults)
+def _cfg(
+    *,
+    oracle_dsn: str = "localhost:1521/XEPDB1",
+    oracle_user: str = "ro_user",
+    oracle_password: str = "pw",
+    allowed_owners: frozenset[str] = frozenset(),
+    max_rows: int = 200,
+    pool_max: int = 4,
+    auth_mode: str = "dev_insecure",
+    oauth_issuer: str | None = None,
+    oauth_jwks_uri: str | None = None,
+    oauth_audience: str | None = None,
+    required_scopes: frozenset[str] = frozenset({"oracle_schema.read"}),
+) -> Config:
+    """Build a Config; any field overridable via keyword (typed for mypy)."""
+    return Config(
+        oracle_dsn=oracle_dsn,
+        oracle_user=oracle_user,
+        oracle_password=oracle_password,
+        allowed_owners=allowed_owners,
+        max_rows=max_rows,
+        pool_max=pool_max,
+        auth_mode=auth_mode,
+        oauth_issuer=oauth_issuer,
+        oauth_jwks_uri=oauth_jwks_uri,
+        oauth_audience=oauth_audience,
+        required_scopes=required_scopes,
+    )
 
 
 class _FakeCursor:

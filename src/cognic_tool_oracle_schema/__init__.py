@@ -1,4 +1,4 @@
-"""cognic-tool-oracle_schema — Cognic AgentOS MCP tool pack.
+"""cognic-tool-oracle-schema — Cognic AgentOS MCP tool pack.
 
 SERVER_DESCRIPTOR is the inert entry-point object PluginRegistry.discover()
 resolves the distribution from. The runtime MCP path runs the tool behind a
@@ -17,7 +17,7 @@ class _ServerDescriptor:
     """Inert marker. The real server lives in cognic_tool_oracle_schema.server."""
 
     cognic_pack_kind: str = "mcp_server"
-    pack_id: str = "cognic-tool-oracle_schema"
+    pack_id: str = "cognic-tool-oracle-schema"
 
 
 SERVER_DESCRIPTOR = _ServerDescriptor()
