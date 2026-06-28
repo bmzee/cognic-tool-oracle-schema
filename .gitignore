@@ -7,3 +7,6 @@ build/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# uv lockfile — incidental build artifact; pyproject pins are the dep source of truth.
+uv.lock
