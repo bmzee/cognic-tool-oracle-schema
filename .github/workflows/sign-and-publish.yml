@@ -1,13 +1,21 @@
-# Release signing workflow — runs `agentos validate` + `agentos sign --bundle`
-# + `agentos verify` to produce the signed attestation bundle. The publishing
-# (distribution) step is intentionally deferred until the Task 9 / release cut;
-# the sign + verify proof is recorded in docs/VALIDATION-RESULTS.md at release.
+# Release signing workflow — builds the wheel, then runs `agentos sign --bundle`
+# + `agentos verify --trust-root` to produce and check the signed attestation
+# bundle. Publishing (distribution) is deferred to the release cut; the
+# sign + verify proof is recorded in docs/VALIDATION-RESULTS.md.
 
 name: sign-and-publish
 
-# Manual / release-gated: signing is Task 9 / operator work and needs the
-# supply-chain toolchain (cosign / syft / grype / pip-licenses) provisioned on
-# the runner first. Do NOT make this push-triggered until that hardening lands.
+# Manual / release-gated. Before this runs GREEN the runner MUST provision the
+# following (this provisioning is the remaining hardening — keep the trigger
+# manual until it lands):
+#   - the supply-chain toolchain on PATH: cosign, syft, grype, pip-licenses
+#     (e.g. sigstore/cosign-installer + the anchore syft/grype installers +
+#     `uv tool install pip-licenses`). `agentos sign --bundle` shells out to all
+#     four and fail-loud-refuses if any is missing.
+#   - the signing key: write the cosign private key from a GitHub Actions secret
+#     to a file, point COGNIC_SIGNING_KEY_PATH at it, and set COSIGN_PASSWORD
+#     from a secret. The committed cosign.pub is the verify trust root — this
+#     pack signs with a maintainer-held key, NOT a keyless/OIDC flow.
 on:
   workflow_dispatch:
 
@@ -15,16 +23,39 @@ jobs:
   sign:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write   # cosign keyless signing via OIDC
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
-      - run: pip install "cognic-agentos @ git+https://github.com/bmzee/cognic-agentos@v0.0.2"
-      - run: agentos validate .
-      - run: agentos sign --bundle .
-      - run: agentos verify .
-      # Publishing step intentionally deferred until the Task 9 / release cut
-      # (the distribution target — internal registry / OCI / PyPI — is decided then).
+          enable-cache: true
+
+      # The dev extra git-pins the @v0.0.2 authoring CLI (validate/sign/verify).
+      - name: Sync dev dependencies (installs the @v0.0.2 authoring CLI)
+        run: uv sync --extra dev
+
+      # sign discovers the wheel (its --bundle-root defaults to the wheel's
+      # parent directory), so the wheel must exist before signing.
+      - name: Build the wheel
+        run: uv build --wheel
+
+      # Operator provisioning (deferred — see header). Example wiring:
+      #   - name: Provision the cosign signing key from a secret
+      #     run: |
+      #       printf '%s' "${{ secrets.COSIGN_PRIVATE_KEY }}" > "$RUNNER_TEMP/cosign.key"
+      #       echo "COGNIC_SIGNING_KEY_PATH=$RUNNER_TEMP/cosign.key" >> "$GITHUB_ENV"
+      - name: Sign the bundle (cosign + SBOM + SLSA + in-toto + vuln + license)
+        env:
+          # COGNIC_SIGNING_KEY_PATH is set by the provisioning step above at
+          # release time; COSIGN_PASSWORD is the matching operator secret.
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: uv run agentos sign --bundle .
+
+      # Verify against the committed public trust root — explicit, never the
+      # implicit Settings.signing_trust_root_path default.
+      - name: Verify the signed bundle (explicit trust root)
+        run: uv run agentos verify --trust-root cosign.pub .
+
+      # Publishing step intentionally deferred until the release cut (the
+      # distribution target — internal registry / OCI / PyPI — is decided then).

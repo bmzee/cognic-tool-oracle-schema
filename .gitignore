@@ -10,3 +10,13 @@ build/
 
 # uv lockfile — incidental build artifact; pyproject pins are the dep source of truth.
 uv.lock
+
+# Signing — never commit private keys; the PUBLIC trust root (cosign.pub) IS committed.
+cosign.key
+*.key
+
+# Generated attestation bundle — build output of `agentos sign --bundle`, not source
+# (Model Y). The directory is kept via .gitkeep so the manifest's attestation_paths
+# still resolve for tooling that probes the path.
+attestations/*
+!attestations/.gitkeep
