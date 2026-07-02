@@ -41,6 +41,12 @@ retention_policy = "none"
 # pack-author docs, typically days).
 # retention_max_window = 90  # uncomment + set when retention_policy != "none"
 egress_allow_list = []  # empty: the pack makes no outbound HTTP calls (the Oracle connection is deployment config, not egress)
+# M5 (ADR-017) — the v0.2.0 delta: the AgentOS kernel's dlp_pre scan runs
+# these cognic-hook-schema-guard hooks over the canonical call_tool argument
+# bytes BEFORE any token / session / transport work. Both hooks are
+# arg-gated (sentinels __FORBIDDEN__ / __EXPLODE__); permitted arguments
+# pass unchanged. Ids match the hook pack's [hooks].declarations exactly.
+dlp_pre_hooks = ["refuse_forbidden_schema_arg", "explode_schema_guard"]
 
 [risk_tier]
 # ADR-014 risk tier. Must be consistent with the declared
