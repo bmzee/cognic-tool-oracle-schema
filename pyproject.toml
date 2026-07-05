@@ -30,7 +30,7 @@ dev = [
     "ruff>=0.9",
     "mypy>=1.14",
     # AgentOS authoring/governance CLI — author/CI-time only (validate/sign/verify).
-    "cognic-agentos @ git+https://github.com/bmzee/cognic-agentos@v0.0.2",
+    "cognic-agentos @ git+https://github.com/bmzee/cognic-agentos@6c4d944",
 ]
 
 [project.entry-points."cognic.tools"]
