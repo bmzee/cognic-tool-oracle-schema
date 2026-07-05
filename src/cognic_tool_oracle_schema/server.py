@@ -7,31 +7,69 @@ The verifier is selected fail-closed by :func:`auth.select_token_verifier`
 ``COGNIC_AUTH_MODE=dev_insecure`` + ``COGNIC_ENV=dev``, enforced in
 :meth:`config.Config.from_env`).
 
-Safety boundary (verbatim from the design source of truth, #108): *"This is a
-schema-metadata tool, not a database query tool. It never executes
-user-supplied SQL, never queries application tables, never returns application
-rows, and never performs DML/DDL."* The six registered tools delegate to
+Safety boundary — the six METADATA tools (verbatim from the design source of
+truth, #108): *"This is a schema-metadata tool, not a database query tool. It
+never executes user-supplied SQL, never queries application tables, never
+returns application rows, and never performs DML/DDL."* They delegate to
 :mod:`cognic_tool_oracle_schema.tools`, whose queries are fixed strings with
 bind variables only.
+
+v0.3.0 (M8, ADR-027) adds ONE deliberate, governed exception:
+``run_readonly_query`` executes agent-authored SELECT statements — but ONLY
+under a kernel-signed query-context token (verify → replay → args-digest →
+SELECT-only parse → token-object allow-set → row bound → Oracle proxy
+authentication as the token's DB identity, whose governed-view-only grants
+are the engine backstop). See :mod:`cognic_tool_oracle_schema.readonly_query`.
+The six metadata tools are UNCHANGED.
 """
 
 from __future__ import annotations
 
+import inspect
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Annotated, Any
 
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
-from pydantic import AnyHttpUrl
+from pydantic import AnyHttpUrl, Field
 
-from . import oracle, tools
+from . import oracle, readonly_query, tools
 from .auth import select_token_verifier
 from .config import Config
 
 _HOST = os.environ.get("COGNIC_MCP_HOST", "127.0.0.1")
 _PORT = int(os.environ.get("COGNIC_MCP_PORT", "8765"))
 _SERVER_URL = os.environ.get("COGNIC_MCP_SERVER_URL", "http://127.0.0.1:8765/mcp")
+
+# The v0.3.0 (M8) governed-query tool's WIRE signature. The kernel dispatcher
+# stamps the signed query-context token onto the call as the
+# ``_cognic_query_context`` argument (core/agent/dispatch.py:109 + :495), but
+# FastMCP refuses leading-underscore PARAMETER names (pydantic field rule), so
+# the registered function carries this attached signature instead: the model
+# field is ``cognic_query_context`` with ``alias="_cognic_query_context"`` —
+# the alias IS the advertised schema property AND the kwarg name FastMCP calls
+# the implementation with (func_metadata's model_dump_one_level dumps BY
+# alias), which the real function accepts as a keyword-only parameter.
+_P = inspect.Parameter
+_RUN_READONLY_QUERY_WIRE_SIGNATURE = inspect.Signature(
+    parameters=[
+        _P("scope_id", _P.POSITIONAL_OR_KEYWORD, annotation=str),
+        _P("sql", _P.POSITIONAL_OR_KEYWORD, annotation=str),
+        # max_rows default None (NOT 100): wire PRESENCE must survive to the
+        # args-digest recompute — the kernel digests max_rows ONLY when the
+        # LLM actually authored it (dispatch.py:324, PRE-stamp).
+        _P("max_rows", _P.POSITIONAL_OR_KEYWORD, default=None, annotation=int | None),
+        _P(
+            "cognic_query_context",
+            _P.KEYWORD_ONLY,
+            default="",
+            annotation=Annotated[str, Field(alias="_cognic_query_context")],
+        ),
+    ],
+    return_annotation=dict[str, Any],
+)
 
 
 def build_server(*, as_issuer: str) -> FastMCP:
@@ -108,6 +146,38 @@ def build_server(*, as_issuer: str) -> FastMCP:
     )
     async def get_constraints(owner: str, table: str) -> dict:
         return await tools.get_constraints(cfg=cfg, owner=owner, table=table)
+
+    # --- v0.3.0 (M8, ADR-027): the governed read-only SQL leg. Registered
+    # via the attached wire signature above so the kernel-stamped
+    # ``_cognic_query_context`` argument is accepted on the wire; the
+    # ``dict[str, Any]`` return annotation populates structuredContent (the
+    # M6 finding-#17 realization). Enforcement lives in readonly_query.run
+    # (seven fail-closed arms; arms 1-6 pure pre-checks, no DB until passed).
+    async def run_readonly_query(
+        scope_id: str,
+        sql: str,
+        max_rows: int | None = None,
+        *,
+        _cognic_query_context: str = "",
+    ) -> dict[str, Any]:
+        return await readonly_query.run(
+            cfg=cfg,
+            scope_id=scope_id,
+            sql=sql,
+            max_rows=max_rows,
+            token=_cognic_query_context,
+        )
+
+    setattr(run_readonly_query, "__signature__", _RUN_READONLY_QUERY_WIRE_SIGNATURE)
+    mcp.tool(
+        name="run_readonly_query",
+        description=(
+            "Run a governed read-only SQL query inside an entitled data scope. "
+            "Requires the kernel-stamped _cognic_query_context token (agent "
+            "dispatch path only); SELECT-only, scope-object allow-set, row-bounded, "
+            "executed under Oracle proxy authentication as the token's DB identity."
+        ),
+    )(run_readonly_query)
 
     return mcp
 

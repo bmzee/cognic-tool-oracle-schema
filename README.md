@@ -2,7 +2,8 @@
 
 A **FastMCP** (Streamable-HTTP) MCP-server tool pack for **Cognic AgentOS** that
 exposes **six read-only Oracle schema-metadata tools** over the Oracle
-data-dictionary (`ALL_*`) views:
+data-dictionary (`ALL_*`) views, plus (v0.3.0, M8 / ADR-027) **one governed
+read-only query tool** for the AgentOS agent loop:
 
 | Tool | Inputs | Returns (per item) |
 |---|---|---|
@@ -12,8 +13,9 @@ data-dictionary (`ALL_*`) views:
 | `find_columns` | `name_pattern`, `owner?` | `owner`, `table_name`, `column_name`, `data_type` |
 | `list_relationships` | `owner`, `table?` | FK edge: `constraint_name`, child `(owner, table, column)`, parent `(owner, table, column)` |
 | `get_constraints` | `owner`, `table` | `constraint_name`, `constraint_type` (P/U/C/R), `column_name`, details |
+| `run_readonly_query` | `scope_id`, `sql`, `max_rows?`, `_cognic_query_context` (kernel-stamped) | `{ok, rows, row_count, truncated}` or `{ok: false, reason, message}` |
 
-Every tool returns a bounded envelope — `{ "items" | "columns": [...], "truncated": bool }`.
+The six metadata tools return a bounded envelope — `{ "items" | "columns": [...], "truncated": bool }`.
 
 The pack has **no kernel runtime dependency**: the AgentOS authoring/governance
 CLI (`agentos validate` / `sign` / `verify`) is an author/CI-time `dev` extra
@@ -21,11 +23,79 @@ only. The server runs behind a real OAuth-PRM bearer with a JWT/JWKS verifier.
 
 ## Safety boundary
 
-> **This is a schema-metadata tool, not a database query tool. It never executes user-supplied SQL, never queries application tables, never returns application rows, and never performs DML/DDL.**
+> **The six metadata tools: this is a schema-metadata tool, not a database query tool. It never executes user-supplied SQL, never queries application tables, never returns application rows, and never performs DML/DDL.**
 
-Mechanism: every query is a hand-written string with **bind variables**; tool
-arguments bind as *values* (`WHERE owner = :owner`, `LIKE :pat`), never
-concatenated into SQL text. There is no passthrough/query tool.
+Mechanism: every metadata query is a hand-written string with **bind variables**;
+tool arguments bind as *values* (`WHERE owner = :owner`, `LIKE :pat`), never
+concatenated into SQL text.
+
+v0.3.0 adds ONE deliberate, governed exception — `run_readonly_query` — which
+executes agent-authored `SELECT` statements **only** under a kernel-signed
+query-context token; see the section below. The six metadata tools are
+unchanged.
+
+## `run_readonly_query` — the governed SQL leg (v0.3.0, M8 / ADR-027)
+
+The Cognic AgentOS kernel's agent dispatcher stamps every `run_readonly_query`
+call with a short-TTL RS256-signed **query-context token** (the
+`_cognic_query_context` argument — kernel-stamped, never LLM-authored) binding
+the call to the asking user's resolved data scope. The tool enforces seven
+fail-closed arms, each with a closed-enum `reason` in the result envelope;
+**arms 1-6 are pure pre-checks — no database connection until all pass**:
+
+1. **Token verification** (`query_context_missing_or_invalid`) — the token
+   must verify against `COGNIC_QUERY_CONTEXT_PUBLIC_KEYS` (comma-separated
+   PEM paths — list `[new, old]` during a rotation), be unexpired
+   (`now >= exp` refuses), and carry the pinned audience
+   `cognic-tool-oracle-schema/run_readonly_query` (the full
+   `server_id/tool_name` ref the kernel stamps). Unset / unreadable / empty
+   key config also refuses at call time — **no token, no query** (the
+   agent-path-only guarantee). Bare-bearer calls outside the agent loop are
+   refused here.
+2. **Replay** (`query_context_replayed`) — each token's `jti` is single-use.
+   The seen-set is **in-process** and TTL'd by the token's own expiry
+   (honest scope note: replicas each keep their own set, so a replay could
+   pass once per replica within the short TTL; a shared Redis set is the
+   Wave-2 hardening).
+3. **Argument binding** (`query_context_args_mismatch`) — the token's
+   `args_sha256` is recomputed over the RECEIVED `{scope_id, sql}` (+
+   `max_rows` only when the wire carried it), so a captured token cannot be
+   re-targeted at different SQL.
+4. **SELECT-only parse** (`sql_parse_failed` / `sql_not_select_only`) —
+   `sqlglot` (Oracle dialect, pure Python) admits exactly ONE plain `SELECT`:
+   DML, DDL, PL/SQL, `WITH FUNCTION`, multi-statement, `SELECT ... FOR
+   UPDATE`, `SELECT ... INTO`, and top-level set operations all refuse.
+5. **Scope object allow-set** (`agent_sql_object_out_of_scope`) — every
+   referenced table (including inside CTEs / subqueries / joins;
+   schema-qualified, case-insensitively normalized; CTE aliases are not
+   tables) must be in the TOKEN's `objects` set. Matching is exact
+   (case-insensitive) on the dotted name, so scopes should list objects as
+   the SQL will reference them (e.g. `COGNIC.V_EMPLOYEE_DIRECTORY`). `DUAL`
+   is always allowed (the engine's one-row dummy table — no governed data).
+6. **Row bound + timeout** — `FETCH FIRST min(max_rows or 100, 500) ROWS
+   ONLY` applied on the AST (an author-written smaller bound is kept; the
+   wrap only ever caps) + a per-call statement timeout
+   (`COGNIC_ORACLE_QUERY_TIMEOUT_S`, default 30 s).
+7. **Oracle proxy authentication** (`query_execution_failed` on any DB
+   failure — exception class name at most, never DB text) — a dedicated
+   connection as `COGNIC_ORACLE_USER[<proxy_db_identity from the token>]`:
+   the session **runs as** the token's DB identity, whose grants (governed
+   views only) are the engine backstop. Never the shared metadata pool.
+
+**DB setup for proxy authentication** (per proxy identity):
+
+```sql
+CREATE USER an_amir IDENTIFIED BY "...";        -- or IDENTIFIED EXTERNALLY
+GRANT CREATE SESSION TO an_amir;
+ALTER USER an_amir GRANT CONNECT THROUGH app_user;  -- app_user = COGNIC_ORACLE_USER
+GRANT SELECT ON retail_analytics.v_customer_deposits TO an_amir;  -- governed views ONLY
+```
+
+The integration seed (`tests/fixtures/seed_schema.sql`) creates a working
+example: `AGENT_RO` proxying through `cognic` with `SELECT` on
+`COGNIC.V_EMPLOYEE_DIRECTORY` only. (gvenzl applies seeds on the FIRST boot of
+a fresh volume — re-create the volume with `docker compose -f
+docker-compose.oracle.yml down -v` if it predates v0.3.0.)
 
 ## Operator notes
 
@@ -77,6 +147,8 @@ the HTTP bind + URLs in `server.py`.
 | `COGNIC_MCP_PORT` | `8765` | Streamable-HTTP bind port. |
 | `COGNIC_MCP_SERVER_URL` | `http://127.0.0.1:8765/mcp` | Public resource-server URL (audience/resource); deploy-overridden to the ClusterIP. |
 | `COGNIC_MCP_AS_ISSUER` | `http://127.0.0.1:9000` | Authorization-server issuer URL passed to `build_server(as_issuer=…)`. |
+| `COGNIC_QUERY_CONTEXT_PUBLIC_KEYS` | *(unset)* | v0.3.0: comma-separated PEM file paths — the kernel query-context verification key set (list `[new, old]` during rotation). Read at **call time**; unset / unreadable / empty refuses every `run_readonly_query` call (`query_context_missing_or_invalid`) while the six metadata tools keep working. |
+| `COGNIC_ORACLE_QUERY_TIMEOUT_S` | `30` | v0.3.0: per-call statement timeout (seconds) for `run_readonly_query` (`oracledb` `call_timeout`). |
 
 ## Running locally (dev)
 

@@ -52,8 +52,9 @@ COMMENT ON TABLE cognic.departments IS 'Demo department lookup for the cognic-to
 COMMENT ON TABLE cognic.employees IS 'Demo employee records for the cognic-tool-oracle-schema integration tests (DEV-ONLY, not real data).';
 COMMENT ON COLUMN cognic.employees.full_name IS 'Employee full display name.';
 
--- A few representative rows so the schema is non-empty. The tools NEVER read
--- these rows (schema-metadata only) — they exist purely to make the seed real.
+-- A few representative rows so the schema is non-empty. The six metadata tools
+-- NEVER read these rows (schema-metadata only); the v0.3.0 run_readonly_query
+-- integration tests DO read them back through the governed view below.
 INSERT INTO cognic.departments (department_id, department_name) VALUES (10, 'Engineering');
 INSERT INTO cognic.departments (department_id, department_name) VALUES (20, 'Finance');
 INSERT INTO cognic.employees (employee_id, full_name, email, salary, hired_on, department_id)
@@ -61,5 +62,35 @@ INSERT INTO cognic.employees (employee_id, full_name, email, salary, hired_on, d
 INSERT INTO cognic.employees (employee_id, full_name, email, salary, hired_on, department_id)
     VALUES (1002, 'Alan Turing', 'alan@example.invalid', 115000, DATE '2024-02-01', 20);
 COMMIT;
+
+-- ---------------------------------------------------------------------------
+-- v0.3.0 (M8, ADR-027) — Oracle proxy-authentication substrate for the
+-- governed run_readonly_query tool (ADDITIVE; the v0.2.0 objects above are
+-- unchanged). NOTE: gvenzl applies this file once, on the FIRST boot of a
+-- fresh volume — volumes seeded before v0.3.0 must be re-created
+-- (`docker compose -f docker-compose.oracle.yml down -v`).
+--
+--   COGNIC.V_EMPLOYEE_DIRECTORY — the governed view (no salary/email).
+--   AGENT_RO                    — the proxy DB identity the kernel-signed
+--                                 query-context token names
+--                                 (proxy_db_identity). The tool connects as
+--                                 cognic[AGENT_RO]: the session RUNS AS
+--                                 AGENT_RO, whose grants — CREATE SESSION +
+--                                 SELECT on the governed view ONLY — are the
+--                                 engine backstop (base tables raise
+--                                 ORA-00942 even if a scope misnames them).
+-- All values are DEV-ONLY throwaways.
+-- ---------------------------------------------------------------------------
+
+CREATE VIEW cognic.v_employee_directory AS
+    SELECT employee_id, full_name, department_id
+    FROM cognic.employees;
+
+COMMENT ON TABLE cognic.v_employee_directory IS 'Governed employee directory view for the run_readonly_query integration tests (DEV-ONLY; no salary/email).';
+
+CREATE USER agent_ro IDENTIFIED BY agent_ro_dev_only;
+GRANT CREATE SESSION TO agent_ro;
+ALTER USER agent_ro GRANT CONNECT THROUGH cognic;
+GRANT SELECT ON cognic.v_employee_directory TO agent_ro;
 
 EXIT

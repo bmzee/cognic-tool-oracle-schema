@@ -1,4 +1,4 @@
-"""Pack-manifest contract tests (v0.2.0 — the M5 DLP hook binding)."""
+"""Pack-manifest contract tests (v0.3.0 — the M8 run_readonly_query leg)."""
 
 from __future__ import annotations
 
@@ -16,8 +16,23 @@ def _pyproject() -> dict:
     return tomllib.loads((_ROOT / "pyproject.toml").read_text())
 
 
-def test_version_is_0_2_0() -> None:
-    assert _pyproject()["project"]["version"] == "0.2.0"
+def test_version_is_0_3_0() -> None:
+    assert _pyproject()["project"]["version"] == "0.3.0"
+
+
+def test_sqlglot_pinned_pure_python() -> None:
+    # Exact pin per the M8 B1 contract (pure-Python; NO sqlglotrs).
+    deps = _pyproject()["project"]["dependencies"]
+    assert "sqlglot==30.12.0" in deps
+    assert not any("sqlglotrs" in d for d in deps)
+
+
+def test_joserfc_and_cryptography_are_runtime_deps() -> None:
+    # The pack-local query-context verifier has NO runtime kernel dependency;
+    # joserfc + cryptography are the pack's own deps (M8 B1).
+    deps = _pyproject()["project"]["dependencies"]
+    assert any(d.startswith("joserfc") for d in deps)
+    assert any(d.startswith("cryptography") for d in deps)
 
 
 def test_data_governance_declares_the_m5_dlp_pre_hooks() -> None:

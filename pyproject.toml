@@ -1,6 +1,6 @@
 [project]
 name = "cognic-tool-oracle-schema"
-version = "0.2.0"
+version = "0.3.0"
 description = "Read-only Oracle schema-metadata MCP tools (Cognic AgentOS pack)."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -14,6 +14,13 @@ dependencies = [
     "uvicorn[standard]>=0.35",
     "oracledb>=2.5",
     "PyJWT[crypto]>=2.10,<3",
+    # v0.3.0 (M8, ADR-027) — run_readonly_query deps. joserfc + cryptography
+    # mirror the kernel's query-context pins (kernel pyproject: joserfc==1.6.4,
+    # cryptography>=45) so pack-side verify tracks kernel-side mint behavior.
+    "joserfc>=1.6.4,<2",
+    "cryptography>=45",
+    # Pure-Python SQL parser (NO sqlglotrs) — exact pin per the M8 B1 contract.
+    "sqlglot==30.12.0",
 ]
 
 [project.optional-dependencies]
