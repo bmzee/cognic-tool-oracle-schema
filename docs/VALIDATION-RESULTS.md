@@ -152,3 +152,28 @@ both releases coexist.
 **Release status: NOT yet released** — the v0.2.0 tag + GitHub Release
 (9 assets, exact verified bytes) are separately authorized steps recorded
 here when cut.
+
+## v0.3.0 — the M8 governed `run_readonly_query` — 2026-07-06
+
+Authored against the **cognic-agentos M8 branch** (`feat/m8-governed-agent-loop`)
+= commit `6c4d944a27aa73b94b3722ca3fb929e39c7c332e` (short `6c4d944`) — the ADR-027
+governed-agent-loop kernel this tool's query-context wire contract mirrors. The
+dev-extra pin was re-anchored from `@v0.0.2` to `@6c4d944` in the same release
+so the 13 cross-repo wire pins RUN in CI (they `importorskip` loudly on a
+pre-M8 kernel). The Provenance section above records the v0.1.0/v0.2.0-era
+anchor and is retained as historical evidence.
+
+- **Gate (local, pin resolved):** `173 passed, 11 skipped` (the 11 = env-gated
+  live-XE integration); `ruff check` + `ruff format --check` clean;
+  `mypy src tests` clean; `agentos validate .` PASS (only the pre-existing
+  Wave-1 `identity_oasf_capability_set_missing` warning).
+- **Wire pins (13):** kernel-minted `mint_query_context` tokens verify
+  field-for-field in the pack's local mirror; pack `canonical_bytes` ==
+  kernel `canonical_bytes` on 6 shapes; args-digest parity with AND without
+  `max_rows` against the kernel dispatcher's exact digest recipe; expired /
+  wrong-audience / tampered-signature refused.
+- **TM-reverts (both byte-identical restores, sha-documented):** the object
+  allow-set guard (4 tests fail without it) + the args-digest recompute
+  (3 tests fail without it).
+- **aud claim:** `cognic-tool-oracle-schema/run_readonly_query` — the kernel
+  stamps `aud=resolved.ref` (the FULL `server_id/tool_name` granted ref).

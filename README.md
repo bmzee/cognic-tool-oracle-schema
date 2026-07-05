@@ -195,7 +195,7 @@ opted in, an unreachable / unseeded DB **fails loud** rather than skipping.
 
 ## Authoring / validation
 
-The `dev` extra carries the AgentOS authoring CLI (git-pinned to `@v0.0.2`):
+The `dev` extra carries the AgentOS authoring CLI + the M8 wire-pin kernel (git-pinned to `@6c4d944`, the `feat/m8-governed-agent-loop` anchor):
 
 ```sh
 uv pip install -e '.[dev]'
@@ -225,6 +225,6 @@ out to cosign / syft / grype / pip-licenses) and are wired into
 ## Provenance
 
 Generated from the AgentOS authoring path and authored against
-**cognic-agentos `v0.0.2`**. The resolved kernel commit SHA plus the live
+**cognic-agentos `6c4d944`** (M8; v0.1.0/v0.2.0 evidence anchored `v0.0.2`). The resolved kernel commit SHA plus the live
 integration and `sign` / `verify` proofs are recorded in
 [`docs/VALIDATION-RESULTS.md`](docs/VALIDATION-RESULTS.md).

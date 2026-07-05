@@ -2,7 +2,7 @@
 #
 # Three lanes:
 #   - lint-type-unit     ruff lint + mypy + the unit suite (no DB)
-#   - authoring-validate the @v0.0.2 `agentos validate` build-time manifest-shape
+#   - authoring-validate via the kernel dev extra's `agentos validate` build-time manifest-shape
 #                         check (placeholder attestations seeded on the runner;
 #                         real cosign/SBOM bundle + `agentos verify` are release)
 #   - oracle-integration env-gated live Oracle XE lane (mirrors the kernel's)
@@ -73,9 +73,9 @@ jobs:
           python-version: "3.12"
           enable-cache: true
 
-      # The `dev` extra git-pins `cognic-agentos @ ...@v0.0.2`, which provides
+      # The `dev` extra git-pins `cognic-agentos` (exact anchor in pyproject.toml), which provides
       # the `agentos` authoring/governance CLI used for the build-time check.
-      - name: Sync dev dependencies (installs the @v0.0.2 authoring CLI)
+      - name: Sync dev dependencies (installs the kernel-pinned authoring CLI)
         run: uv sync --extra dev
 
       # `agentos validate` checks the manifest against the build-time trust gate,

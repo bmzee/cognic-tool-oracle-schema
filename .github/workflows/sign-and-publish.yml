@@ -31,8 +31,8 @@ jobs:
           python-version: "3.12"
           enable-cache: true
 
-      # The dev extra git-pins the @v0.0.2 authoring CLI (validate/sign/verify).
-      - name: Sync dev dependencies (installs the @v0.0.2 authoring CLI)
+      # The dev extra git-pins the AgentOS authoring CLI (exact anchor in pyproject.toml) (validate/sign/verify).
+      - name: Sync dev dependencies (installs the pyproject-pinned authoring CLI)
         run: uv sync --extra dev
 
       # sign discovers the wheel (its --bundle-root defaults to the wheel's
