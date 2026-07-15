@@ -1,64 +1,196 @@
-# Release signing workflow — builds the wheel, then runs `agentos sign --bundle`
-# + `agentos verify --trust-root` to produce and check the signed attestation
-# bundle. Publishing (the GitHub release upload + digest-pin print) is the
-# maintainer's release.sh; this workflow is the CI-side mirror of its
-# build/sign/verify spine.
+# Protected release workflow for cognic-tool-oracle-schema.
+#
+# The first job validates an explicit release request without access to signing
+# secrets. The second job is held behind the GitHub "release" environment,
+# derives the committed trust root from the environment-held private key, and
+# invokes the same guarded release.sh used by a maintainer locally.
 
 name: sign-and-publish
 
-# Manual / release-gated. Before this runs GREEN the runner MUST provision the
-# following (this provisioning is the remaining hardening — keep the trigger
-# manual until it lands):
-#   - the supply-chain toolchain on PATH: cosign, syft, grype, pip-licenses
-#     (e.g. sigstore/cosign-installer + the anchore syft/grype installers +
-#     `uv tool install pip-licenses`). `agentos sign --bundle` shells out to all
-#     four and fail-loud-refuses if any is missing.
-#   - the signing key: write the cosign private key from a GitHub Actions secret
-#     to a file, point COGNIC_SIGNING_KEY_PATH at it, and set COSIGN_PASSWORD
-#     from a secret. The committed cosign.pub is the verify trust root — this
-#     pack signs with a maintainer-held key, NOT a keyless/OIDC flow.
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish (must equal pyproject.toml and release.sh)
+        required: true
+        default: "0.4.0"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sign-and-publish-${{ github.repository }}
+  cancel-in-progress: false
 
 jobs:
-  sign:
+  validate-request:
+    name: validate release request
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v7
+      - name: Checkout the requested revision with tags
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Refuse a stale, duplicate, or off-main release request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF" = "refs/heads/main" ] || {
+            echo "FATAL: releases must be dispatched from main" >&2
+            exit 1
+          }
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ] || {
+            echo "FATAL: checkout does not match the workflow revision" >&2
+            exit 1
+          }
+          [ -z "$(git status --porcelain --untracked-files=all)" ] || {
+            echo "FATAL: release checkout is dirty" >&2
+            exit 1
+          }
+          project_version="$(
+            python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])'
+          )"
+          [ "$REQUESTED_VERSION" = "$project_version" ] || {
+            echo "FATAL: requested version does not match pyproject.toml" >&2
+            exit 1
+          }
+          grep -Fqx "VERSION=\"$project_version\"" release.sh || {
+            echo "FATAL: release.sh version does not match pyproject.toml" >&2
+            exit 1
+          }
+          tag="v$project_version"
+          ! git show-ref --verify --quiet "refs/tags/$tag" || {
+            echo "FATAL: release tag already exists" >&2
+            exit 1
+          }
+          ! gh release view "$tag" >/dev/null 2>&1 || {
+            echo "FATAL: GitHub release already exists" >&2
+            exit 1
+          }
+
+  release:
+    name: sign, verify, and publish
+    needs: validate-request
+    environment: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout the exact approved revision with tags
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Install uv and Python 3.12
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
           enable-cache: true
 
-      # The committed lock is the runtime inventory consumed by agentos sign.
-      - name: Check lock + sync dev dependencies (frozen)
+      - name: Check lock and sync the frozen authoring environment
+        shell: bash
         run: |
+          set -euo pipefail
           uv lock --check
           uv sync --frozen --extra dev
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
 
-      # sign discovers the wheel (its --bundle-root defaults to the wheel's
-      # parent directory), so the wheel must exist before signing.
-      - name: Build the wheel
-        run: uv build --wheel
+      - name: Install checksum-pinned cosign, syft, and grype
+        shell: bash
+        run: |
+          set -euo pipefail
+          COSIGN_VERSION=3.0.6
+          COSIGN_SHA256=c956e5dfcac53d52bcf058360d579472f0c1d2d9b69f55209e256fe7783f4c74
+          SYFT_VERSION=1.45.1
+          SYFT_SHA256=20c84195e24927f50a3b2269946be51f4c4abc9d2f145fee7388b4199149f716
+          GRYPE_VERSION=0.114.0
+          GRYPE_SHA256=edda0968d8827daab01d32b3cd7de192ae0915005e7bbfcfef9e68e79bc43343
 
-      # Operator provisioning (deferred — see header). Example wiring:
-      #   - name: Provision the cosign signing key from a secret
-      #     run: |
-      #       printf '%s' "${{ secrets.COSIGN_PRIVATE_KEY }}" > "$RUNNER_TEMP/cosign.key"
-      #       echo "COGNIC_SIGNING_KEY_PATH=$RUNNER_TEMP/cosign.key" >> "$GITHUB_ENV"
-      - name: Sign the bundle (cosign + SBOM + SLSA + in-toto + vuln + license)
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            -o /tmp/cosign \
+            "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-linux-amd64"
+          echo "${COSIGN_SHA256}  /tmp/cosign" | sha256sum -c -
+          sudo install -m 0755 /tmp/cosign /usr/local/bin/cosign
+
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            -o /tmp/syft.tar.gz \
+            "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+          echo "${SYFT_SHA256}  /tmp/syft.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/syft.tar.gz -C /tmp syft
+          sudo install -m 0755 /tmp/syft /usr/local/bin/syft
+
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            -o /tmp/grype.tar.gz \
+            "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+          echo "${GRYPE_SHA256}  /tmp/grype.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/grype.tar.gz -C /tmp grype
+          sudo install -m 0755 /tmp/grype /usr/local/bin/grype
+
+          rm -f /tmp/cosign /tmp/syft.tar.gz /tmp/syft /tmp/grype.tar.gz /tmp/grype
+          cosign version
+          syft version
+          grype version
+          pip-licenses --version
+
+      - name: Provision the environment-held signing key
+        shell: bash
         env:
-          # COGNIC_SIGNING_KEY_PATH is set by the provisioning step above at
-          # release time; COSIGN_PASSWORD is the matching operator secret.
+          COGNIC_SIGNING_KEY_PATH: ${{ runner.temp }}/cosign.key
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "$COSIGN_PRIVATE_KEY" ] || {
+            echo "FATAL: COSIGN_PRIVATE_KEY is empty" >&2
+            exit 1
+          }
+          _signing_key_material="$COSIGN_PRIVATE_KEY"
+          unset COSIGN_PRIVATE_KEY
+          umask 077
+          printf '%s' "$_signing_key_material" > "$COGNIC_SIGNING_KEY_PATH"
+          unset _signing_key_material
+          [ -s "$COGNIC_SIGNING_KEY_PATH" ] || {
+            echo "FATAL: provisioned signing key is empty" >&2
+            exit 1
+          }
+          chmod 0600 "$COGNIC_SIGNING_KEY_PATH"
+          echo "COGNIC_SIGNING_KEY_PATH=$COGNIC_SIGNING_KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Verify the private key derives the committed trust root
+        shell: bash
+        env:
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-        run: uv run agentos sign --bundle .
+        run: |
+          set -euo pipefail
+          [ -n "$COSIGN_PASSWORD" ] || {
+            echo "FATAL: COSIGN_PASSWORD is empty" >&2
+            exit 1
+          }
+          cosign public-key --key "$COGNIC_SIGNING_KEY_PATH" > "$RUNNER_TEMP/derived-cosign.pub"
+          cmp -s "$RUNNER_TEMP/derived-cosign.pub" cosign.pub || {
+            echo "FATAL: environment signing key does not match committed cosign.pub" >&2
+            exit 1
+          }
 
-      # Verify against the committed public trust root — explicit, never the
-      # implicit Settings.signing_trust_root_path default.
-      - name: Verify the signed bundle (explicit trust root)
-        run: uv run agentos verify --trust-root cosign.pub .
+      - name: Build, sign, verify, and publish the exact revision
+        shell: bash
+        env:
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TARGET_SHA: ${{ github.sha }}
+        run: ./release.sh
 
-      # Publishing (the `gh release create` upload + ORACLE_* digest pins) is
-      # intentionally maintainer-local and token-gated in release.sh.
+      - name: Remove the provisioned private key
+        if: always()
+        shell: bash
+        run: |
+          rm -f "${COGNIC_SIGNING_KEY_PATH:-}" "$RUNNER_TEMP/derived-cosign.pub"

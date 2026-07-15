@@ -227,10 +227,16 @@ uv run agentos validate .     # now PASS (manifest-shape only)
 
 The real bundle (`agentos sign --bundle .`, which shells out to cosign / syft /
 grype / pip-licenses), offline verification against `cosign.pub`, GitHub release
-upload, and `ORACLE_*_SHA256` digest print are wrapped by **`release.sh`**. It
-requires the maintainer-held private key through `COGNIC_SIGNING_KEY_PATH` and
-`COSIGN_PASSWORD`; values are never echoed. The workflow mirrors the local
-build/sign/verify spine but deliberately does not publish.
+upload, and `ORACLE_*_SHA256` digest print are wrapped by **`release.sh`**.
+The dispatch-only `sign-and-publish` workflow is the protected remote entry:
+its first job validates the requested version and absence of a prior tag/release,
+then the `release` environment holds execution for maintainer approval. Only
+that protected job can read `COSIGN_PRIVATE_KEY` and `COSIGN_PASSWORD`; it
+installs checksum-pinned signing tools, proves the private key derives the
+committed `cosign.pub`, and invokes `release.sh` with the exact workflow SHA
+as the release target. The same script remains usable locally with
+`COGNIC_SIGNING_KEY_PATH` and `COSIGN_PASSWORD`; secret values are never
+echoed.
 
 ## Provenance
 
