@@ -7,6 +7,16 @@ import tomllib
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 
+_EXPECTED_CAPABILITY_CLASSES = {
+    "list_schemas": "unscoped",
+    "list_tables": "unscoped",
+    "describe_table": "unscoped",
+    "find_columns": "unscoped",
+    "list_relationships": "unscoped",
+    "get_constraints": "unscoped",
+    "run_readonly_query": "data_query",
+}
+
 
 def _manifest() -> dict:
     return tomllib.loads((_ROOT / "cognic-pack-manifest.toml").read_text())
@@ -58,3 +68,10 @@ def test_risk_tier_stays_read_only() -> None:
     # Cross-checked against [data_governance] by the kernel validator; the
     # DLP binding adds governance, not risk.
     assert _manifest()["risk_tier"]["tier"] == "read_only"
+
+
+def test_every_exposed_tool_declares_a_capability_class() -> None:
+    """Every exposed tool declares the class enforced by AgentOS dispatch."""
+    tools = _manifest()["tool"]["cognic"]["tools"]
+    declared = {tool["name"]: tool["capability_class"] for tool in tools}
+    assert declared == _EXPECTED_CAPABILITY_CLASSES

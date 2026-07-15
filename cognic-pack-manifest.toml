@@ -76,3 +76,38 @@ resources_supported = false
 prompts_supported = false
 sampling_supported = false
 conformance_version = "1.0"
+
+# Per-tool governance declaration. The kernel's agent dispatcher keys its
+# entitlement gate on capability_class; a tool with NO declared class is
+# REFUSED (fail-closed). The six metadata tools are `unscoped` — they read
+# catalog structure only, gated by COGNIC_ORACLE_ALLOWED_OWNERS and the
+# pack's OAuth scope, and carry no per-user data authority.
+# run_readonly_query is `data_query`: it requires a data-scope entitlement
+# for the requesting HUMAN and receives the kernel-signed query-context token.
+[[tool.cognic.tools]]
+name = "list_schemas"
+capability_class = "unscoped"
+
+[[tool.cognic.tools]]
+name = "list_tables"
+capability_class = "unscoped"
+
+[[tool.cognic.tools]]
+name = "describe_table"
+capability_class = "unscoped"
+
+[[tool.cognic.tools]]
+name = "find_columns"
+capability_class = "unscoped"
+
+[[tool.cognic.tools]]
+name = "list_relationships"
+capability_class = "unscoped"
+
+[[tool.cognic.tools]]
+name = "get_constraints"
+capability_class = "unscoped"
+
+[[tool.cognic.tools]]
+name = "run_readonly_query"
+capability_class = "data_query"
