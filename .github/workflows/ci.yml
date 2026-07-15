@@ -9,7 +9,7 @@
 #
 # Signing/publishing (`agentos sign --bundle` + `agentos verify`) is RELEASE
 # work — it shells out to cosign / syft / grype / pip-licenses — and lives in
-# .github/workflows/sign-and-publish.yml, not here.
+# .github/workflows/sign-and-publish.yml + release.sh, not here.
 
 name: ci
 
@@ -42,10 +42,10 @@ jobs:
           python-version: "3.12"
           enable-cache: true
 
-      # uv.lock is intentionally gitignored in this repo (the pyproject pins are
-      # the source of truth), so sync resolves at CI time — NOT `--frozen`.
-      - name: Sync dev dependencies
-        run: uv sync --extra dev
+      - name: Check lock + sync dev dependencies (frozen)
+        run: |
+          uv lock --check
+          uv sync --frozen --extra dev
 
       - name: Ruff lint
         run: uv run ruff check src tests
@@ -75,8 +75,10 @@ jobs:
 
       # The `dev` extra git-pins `cognic-agentos` (exact anchor in pyproject.toml), which provides
       # the `agentos` authoring/governance CLI used for the build-time check.
-      - name: Sync dev dependencies (installs the kernel-pinned authoring CLI)
-        run: uv sync --extra dev
+      - name: Check lock + sync dev dependencies (installs the kernel-pinned authoring CLI)
+        run: |
+          uv lock --check
+          uv sync --frozen --extra dev
 
       # `agentos validate` checks the manifest against the build-time trust gate,
       # which includes that each declared [supply_chain].attestation_paths file
@@ -98,7 +100,7 @@ jobs:
 
       # NOTE: `agentos sign --bundle` + `agentos verify` run at RELEASE (they
       # shell out to cosign / syft / grype / pip-licenses, absent from this CI).
-      # See .github/workflows/sign-and-publish.yml + plan Task 9 — out of scope
+      # See .github/workflows/sign-and-publish.yml + release.sh — out of scope
       # for this PR-side lane.
 
   oracle-integration:
@@ -120,8 +122,10 @@ jobs:
           python-version: "3.12"
           enable-cache: true
 
-      - name: Sync dev dependencies
-        run: uv sync --extra dev
+      - name: Check lock + sync dev dependencies (frozen)
+        run: |
+          uv lock --check
+          uv sync --frozen --extra dev
 
       - name: Bring up Oracle XE (wait for healthy)
         run: docker compose -f docker-compose.oracle.yml up -d --wait

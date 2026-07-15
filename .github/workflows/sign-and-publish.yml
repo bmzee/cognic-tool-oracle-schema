@@ -1,7 +1,8 @@
 # Release signing workflow — builds the wheel, then runs `agentos sign --bundle`
 # + `agentos verify --trust-root` to produce and check the signed attestation
-# bundle. Publishing (distribution) is deferred to the release cut; the
-# sign + verify proof is recorded in docs/VALIDATION-RESULTS.md.
+# bundle. Publishing (the GitHub release upload + digest-pin print) is the
+# maintainer's release.sh; this workflow is the CI-side mirror of its
+# build/sign/verify spine.
 
 name: sign-and-publish
 
@@ -31,9 +32,11 @@ jobs:
           python-version: "3.12"
           enable-cache: true
 
-      # The dev extra git-pins the AgentOS authoring CLI (exact anchor in pyproject.toml) (validate/sign/verify).
-      - name: Sync dev dependencies (installs the pyproject-pinned authoring CLI)
-        run: uv sync --extra dev
+      # The committed lock is the runtime inventory consumed by agentos sign.
+      - name: Check lock + sync dev dependencies (frozen)
+        run: |
+          uv lock --check
+          uv sync --frozen --extra dev
 
       # sign discovers the wheel (its --bundle-root defaults to the wheel's
       # parent directory), so the wheel must exist before signing.
@@ -57,5 +60,5 @@ jobs:
       - name: Verify the signed bundle (explicit trust root)
         run: uv run agentos verify --trust-root cosign.pub .
 
-      # Publishing step intentionally deferred until the release cut (the
-      # distribution target — internal registry / OCI / PyPI — is decided then).
+      # Publishing (the `gh release create` upload + ORACLE_* digest pins) is
+      # intentionally maintainer-local and token-gated in release.sh.

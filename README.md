@@ -174,8 +174,9 @@ verifier (issuer / signature / expiry / audience / required scope).
 **Unit suite** (no DB — fake-cursor):
 
 ```sh
-uv pip install -e '.[dev]'
-pytest tests/ -q
+uv lock --check
+uv sync --frozen --extra dev
+uv run pytest tests/ -q
 ```
 
 **Integration suite** (env-gated; live, seeded Oracle XE via `docker compose`):
@@ -195,12 +196,19 @@ opted in, an unreachable / unseeded DB **fails loud** rather than skipping.
 
 ## Authoring / validation
 
-The `dev` extra carries the AgentOS authoring CLI + the M8 wire-pin kernel (git-pinned to `@6c4d944`, the `feat/m8-governed-agent-loop` anchor):
+The `dev` extra carries the AgentOS authoring CLI, full-SHA-pinned to the
+ADR-016 hardened signer used by the sibling approval-probe pack:
 
 ```sh
-uv pip install -e '.[dev]'
-agentos validate .            # build-time manifest-shape check
+uv lock --check
+uv sync --frozen --extra dev
+uv run agentos validate .     # build-time manifest-shape check
 ```
+
+`uv.lock` is committed supply-chain evidence, not local cache. It is the
+single resolved dependency inventory consumed by `agentos sign`; CI and
+`release.sh` both check it before a frozen sync so a release cannot silently
+resolve a different dependency set from the reviewed tree.
 
 `agentos validate` checks the manifest against the build-time trust gate, which
 includes that each declared `[supply_chain].attestation_paths` file exists — so
@@ -214,17 +222,22 @@ runner (it never commits them):
 mkdir -p attestations
 printf 'placeholder\n' > attestations/cosign.sig
 printf '{"bomFormat":"CycloneDX","specVersion":"1.5","version":1}\n' > attestations/sbom.cdx.json
-agentos validate .            # now PASS (manifest-shape only)
+uv run agentos validate .     # now PASS (manifest-shape only)
 ```
 
-`agentos sign --bundle .` + `agentos verify .` run at **release** (they shell
-out to cosign / syft / grype / pip-licenses) and are wired into
-`.github/workflows/sign-and-publish.yml`. The PR-side `ci.yml` runs lint + type
-+ unit, `agentos validate`, and the env-gated Oracle lane.
+The real bundle (`agentos sign --bundle .`, which shells out to cosign / syft /
+grype / pip-licenses), offline verification against `cosign.pub`, GitHub release
+upload, and `ORACLE_*_SHA256` digest print are wrapped by **`release.sh`**. It
+requires the maintainer-held private key through `COGNIC_SIGNING_KEY_PATH` and
+`COSIGN_PASSWORD`; values are never echoed. The workflow mirrors the local
+build/sign/verify spine but deliberately does not publish.
 
 ## Provenance
 
-Generated from the AgentOS authoring path and authored against
-**cognic-agentos `6c4d944`** (M8; v0.1.0/v0.2.0 evidence anchored `v0.0.2`). The resolved kernel commit SHA plus the live
-integration and `sign` / `verify` proofs are recorded in
+The governed-query wire contract was authored against **cognic-agentos
+`6c4d944`** (M8; v0.1.0/v0.2.0 evidence anchored `v0.0.2`). Release authoring
+now uses the full-SHA ADR-016 hardened signer at
+`756b9abd02c59e8f1e0164bec975da0de166e70d`; these are distinct provenance
+claims. The resolved kernel commits plus live integration and sign/verify
+proofs are recorded in
 [`docs/VALIDATION-RESULTS.md`](docs/VALIDATION-RESULTS.md).

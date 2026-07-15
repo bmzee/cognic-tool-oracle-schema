@@ -8,8 +8,8 @@ build/
 .mypy_cache/
 .ruff_cache/
 
-# uv lockfile — incidental build artifact; pyproject pins are the dep source of truth.
-uv.lock
+# uv.lock is committed supply-chain evidence consumed by the hardened signer.
+# CI and release paths verify it before every frozen dev sync.
 
 # Signing — never commit private keys; the PUBLIC trust root (cosign.pub) IS committed.
 cosign.key

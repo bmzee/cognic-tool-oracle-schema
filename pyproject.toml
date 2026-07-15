@@ -29,8 +29,9 @@ dev = [
     "pytest-asyncio>=1",
     "ruff>=0.9",
     "mypy>=1.14",
-    # AgentOS authoring/governance CLI — author/CI-time only (validate/sign/verify).
-    "cognic-agentos @ git+https://github.com/bmzee/cognic-agentos@6c4d944",
+    # AgentOS authoring/governance CLI — author/CI-time only. Full-SHA pin to
+    # the ADR-016 hardened signer used by the sibling approval-probe pack.
+    "cognic-agentos @ git+https://github.com/bmzee/cognic-agentos@756b9abd02c59e8f1e0164bec975da0de166e70d",
 ]
 
 [project.entry-points."cognic.tools"]
