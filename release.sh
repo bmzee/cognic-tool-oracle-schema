@@ -10,7 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION="0.3.0"
+VERSION="0.4.0"
 TAG="v${VERSION}"
 WHEEL="dist/cognic_tool_oracle_schema-${VERSION}-py3-none-any.whl"
 

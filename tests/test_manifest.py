@@ -1,4 +1,4 @@
-"""Pack-manifest contract tests (v0.3.0 — the M8 run_readonly_query leg)."""
+"""Pack-manifest contracts for v0.4.0 capability-class declarations."""
 
 from __future__ import annotations
 
@@ -26,8 +26,8 @@ def _pyproject() -> dict:
     return tomllib.loads((_ROOT / "pyproject.toml").read_text())
 
 
-def test_version_is_0_3_0() -> None:
-    assert _pyproject()["project"]["version"] == "0.3.0"
+def test_version_is_0_4_0() -> None:
+    assert _pyproject()["project"]["version"] == "0.4.0"
 
 
 def test_sqlglot_pinned_pure_python() -> None:
