@@ -29,6 +29,10 @@ dev = [
     "pytest-asyncio>=1",
     "ruff>=0.9",
     "mypy>=1.14",
+    # `agentos sign` shells out to the pip-licenses binary for the ADR-016
+    # license-audit attestation; the release job provisions it solely via
+    # `uv sync --frozen --extra dev`.
+    "pip-licenses>=5",
     # AgentOS authoring/governance CLI — author/CI-time only. Full-SHA pin to
     # the ADR-016 hardened signer used by the sibling approval-probe pack.
     "cognic-agentos @ git+https://github.com/bmzee/cognic-agentos@756b9abd02c59e8f1e0164bec975da0de166e70d",

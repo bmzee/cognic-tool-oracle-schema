@@ -190,3 +190,32 @@ def test_release_script_scopes_password_and_github_token_to_their_consumers() ->
     assert max(capture_password_at, capture_token_at) < unset_exports_at < first_external_at
     assert 'COSIGN_PASSWORD="$_COSIGN_PASSWORD_LOCAL" uv run agentos sign --bundle .' in script
     assert 'GH_TOKEN="$_GH_TOKEN_LOCAL" _publish_release' in script
+
+
+def test_dev_extra_provisions_the_license_auditor() -> None:
+    """`agentos sign` shells out to the `pip-licenses` binary (resolved via
+    shutil.which) for the license-audit attestation, and the release job
+    provisions tooling ONLY through `uv sync --frozen --extra dev` plus the
+    three checksum-pinned binaries. Protected run 29471593774 failed closed at
+    `pip-licenses: command not found` (exit 127) when the dev extra omitted it.
+    """
+    project = _pyproject()["project"]
+    assert isinstance(project, dict)
+    optional = project["optional-dependencies"]
+    assert isinstance(optional, dict)
+    dev = optional["dev"]
+    assert isinstance(dev, list)
+    declared = {_normalized_requirement_name(item) for item in dev if isinstance(item, str)}
+    assert "pip-licenses" in declared
+
+    root = _root_lock_package()
+    lock_optional = root["optional-dependencies"]
+    assert isinstance(lock_optional, dict)
+    locked_dev_entries = lock_optional["dev"]
+    assert isinstance(locked_dev_entries, list)
+    locked_dev = {
+        str(dependency["name"]).lower().replace("_", "-")
+        for dependency in locked_dev_entries
+        if isinstance(dependency, dict)
+    }
+    assert "pip-licenses" in locked_dev
