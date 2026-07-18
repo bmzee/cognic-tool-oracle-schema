@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1 - 2026-07-18
+
+- Stamp Oracle `CLIENT_IDENTIFIER` with the uniform 64-hex SHA-256 reference
+  of the verified issuer-qualified subject. The signed query context and
+  kernel evidence retain the full subject for deterministic correlation.
+
 ## 0.5.0 - 2026-07-18
 
 - Replace the plaintext `COGNIC_ORACLE_PASSWORD` environment channel with the

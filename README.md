@@ -82,6 +82,13 @@ fail-closed arms, each with a closed-enum `reason` in the result envelope;
    the session **runs as** the token's DB identity, whose grants (governed
    views only) are the engine backstop. Never the shared metadata pool.
 
+For DB-native attribution, Oracle audit carries a uniform 64-hex subject
+reference: `CLIENT_IDENTIFIER = SHA-256(<issuer-qualified subject UTF-8 bytes>)`.
+The kernel's signed query context and evidence chain retain the full subject;
+operators correlate the database row to that identity by recomputing the
+reference. The subject is an identifier rather than a secret, and the mapping
+remains kernel-held rather than being delegated to the pack or database.
+
 **DB setup for proxy authentication** (per proxy identity):
 
 ```sql
