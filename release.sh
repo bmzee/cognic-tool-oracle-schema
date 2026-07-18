@@ -21,7 +21,7 @@ _SCRIPT_DIR="${_SCRIPT_PATH%/*}"
 cd "$_SCRIPT_DIR"
 unset _SCRIPT_PATH _SCRIPT_DIR
 
-VERSION="0.4.0"
+VERSION="0.5.0"
 TAG="v${VERSION}"
 WHEEL="dist/cognic_tool_oracle_schema-${VERSION}-py3-none-any.whl"
 RELEASE_TARGET_SHA="${RELEASE_TARGET_SHA:-$(git rev-parse HEAD)}"

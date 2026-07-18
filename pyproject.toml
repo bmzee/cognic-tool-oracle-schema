@@ -1,6 +1,6 @@
 [project]
 name = "cognic-tool-oracle-schema"
-version = "0.4.0"
+version = "0.5.0"
 description = "Read-only Oracle schema-metadata MCP tools (Cognic AgentOS pack)."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
