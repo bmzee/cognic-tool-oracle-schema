@@ -44,7 +44,8 @@ def _set_full_dev_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("COGNIC_ENV", "dev")
     monkeypatch.setenv("COGNIC_ORACLE_DSN", "localhost:1521/XEPDB1")
     monkeypatch.setenv("COGNIC_ORACLE_USER", "ro_user")
-    monkeypatch.setenv("COGNIC_ORACLE_PASSWORD", "pw")
+    monkeypatch.setenv("COGNIC_ORACLE_PASSWORD_FILE", "/run/secrets/oracle-password")
+    monkeypatch.delenv("COGNIC_ORACLE_PASSWORD", raising=False)
 
 
 def test_build_server_returns_fastmcp(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -149,7 +150,8 @@ def test_build_server_fails_closed_jwt_without_oauth_triple(
     # fails closed before any FastMCP construction.
     monkeypatch.setenv("COGNIC_ORACLE_DSN", "localhost:1521/XEPDB1")
     monkeypatch.setenv("COGNIC_ORACLE_USER", "ro_user")
-    monkeypatch.setenv("COGNIC_ORACLE_PASSWORD", "pw")
+    monkeypatch.setenv("COGNIC_ORACLE_PASSWORD_FILE", "/run/secrets/oracle-password")
+    monkeypatch.delenv("COGNIC_ORACLE_PASSWORD", raising=False)
     monkeypatch.setenv("COGNIC_AUTH_MODE", "jwt")
     for k in ("COGNIC_OAUTH_ISSUER", "COGNIC_OAUTH_JWKS_URI", "COGNIC_OAUTH_AUDIENCE"):
         monkeypatch.delenv(k, raising=False)

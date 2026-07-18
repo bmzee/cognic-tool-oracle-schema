@@ -15,7 +15,7 @@ class ConfigError(RuntimeError):
 class Config:
     oracle_dsn: str
     oracle_user: str
-    oracle_password: str
+    oracle_password_file: str
     allowed_owners: frozenset[str]  # empty = trust the DB grant
     max_rows: int
     pool_max: int
@@ -32,6 +32,13 @@ class Config:
             if not v:
                 raise ConfigError(f"missing required env {k}")
             return v
+
+        if os.environ.get("COGNIC_ORACLE_PASSWORD") is not None:
+            raise ConfigError(
+                "COGNIC_ORACLE_PASSWORD was removed in v0.5.0; mount a credential "
+                "file and set COGNIC_ORACLE_PASSWORD_FILE (spec section 5: the store "
+                "injects; the plaintext env channel is retired)"
+            )
 
         auth_mode = os.environ.get("COGNIC_AUTH_MODE", "jwt")
         if auth_mode == "dev_insecure" and os.environ.get("COGNIC_ENV") != "dev":
@@ -66,7 +73,7 @@ class Config:
         return Config(
             oracle_dsn=_req("COGNIC_ORACLE_DSN"),
             oracle_user=_req("COGNIC_ORACLE_USER"),
-            oracle_password=_req("COGNIC_ORACLE_PASSWORD"),
+            oracle_password_file=_req("COGNIC_ORACLE_PASSWORD_FILE"),
             allowed_owners=allowed,
             max_rows=max_rows,
             pool_max=int(os.environ.get("COGNIC_ORACLE_POOL_MAX", "4")),

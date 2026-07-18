@@ -25,7 +25,7 @@ def _cfg(
     *,
     oracle_dsn: str = "localhost:1521/XEPDB1",
     oracle_user: str = "ro_user",
-    oracle_password: str = "pw",
+    oracle_password_file: str = "/run/secrets/oracle-password",
     allowed_owners: frozenset[str] = frozenset(),
     max_rows: int = 200,
     pool_max: int = 4,
@@ -44,7 +44,7 @@ def _cfg(
     return Config(
         oracle_dsn=oracle_dsn,
         oracle_user=oracle_user,
-        oracle_password=oracle_password,
+        oracle_password_file=oracle_password_file,
         allowed_owners=allowed_owners,
         max_rows=max_rows,
         pool_max=pool_max,

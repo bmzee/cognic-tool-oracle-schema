@@ -38,6 +38,7 @@ kernel_qc = pytest.importorskip(
 kernel_canonical = pytest.importorskip("cognic_agentos.core.canonical")
 
 from cognic_tool_oracle_schema import readonly_query  # noqa: E402
+from cognic_tool_oracle_schema.credential import CredentialRead  # noqa: E402
 from cognic_tool_oracle_schema.query_context import (  # noqa: E402
     QueryContextRefusal,
     canonical_bytes,
@@ -190,6 +191,14 @@ class TestKernelTokenThroughEnvelope:
         arguments = {"scope_id": "retail_analytics", "sql": sql}
         claims = _kernel_claims(args_sha256=_kernel_args_sha256(arguments))
         token = kernel_qc.mint_query_context(claims=claims, signing_key_pem=keypair[0])
+        monkeypatch.setattr(
+            readonly_query,
+            "read_credential",
+            lambda _path: CredentialRead(
+                password="fixture-only-kernel-wire-value",
+                rotation_ref="2026-07-18T00:00:00+00:00",
+            ),
+        )
         connect = _ConnectRecorder(rows=[("Ada",)], description=[("FULL_NAME",)])
         result = await readonly_query.run(
             cfg=_cfg(),
@@ -206,5 +215,11 @@ class TestKernelTokenThroughEnvelope:
             "rows": [{"FULL_NAME": "Ada"}],
             "row_count": 1,
             "truncated": False,
+            "credential_rotation_ref": "2026-07-18T00:00:00+00:00",
         }
         assert connect.calls[0]["user"] == "app_user[AGENT_RO]"
+        assert connect.conns[0].cursor().operations[0] == (
+            "callproc",
+            "dbms_session.set_identifier",
+            (claims.sub,),
+        )

@@ -33,14 +33,17 @@ until every one has passed:
      ONLY`` applied on the AST (never string concat; an author-written
      smaller bound is kept — the wrap only ever CAPS) + a per-call statement
      timeout (``COGNIC_ORACLE_QUERY_TIMEOUT_S``, default 30s).
-  7. **Oracle proxy authentication** — a DEDICATED connection as
+  7. **Oracle proxy authentication + identity stamp** — a DEDICATED connection as
      ``user="APP_USER[<proxy_db_identity from the token>]"``: the session
      RUNS AS that DB identity, whose grants (governed views only) are the
-     engine backstop. Deliberately NOT the shared metadata pool — proxy
-     identity must never bleed across pooled sessions. Any DB-side failure
-     → ``query_execution_failed`` (exception CLASS name at most, never text).
+     engine backstop. Before user SQL, ``DBMS_SESSION.SET_IDENTIFIER`` stamps
+     the verified human subject. Deliberately NOT the shared metadata pool —
+     proxy identity must never bleed across pooled sessions. Stamp failure →
+     ``query_identity_stamp_failed``; any other DB-side failure →
+     ``query_execution_failed`` (exception CLASS name at most, never text).
 
-Result envelope: ``{"ok": True, "rows", "row_count", "truncated"}`` on
+Result envelope: ``{"ok": True, "rows", "row_count", "truncated",
+"credential_rotation_ref"}`` on
 success; ``{"ok": False, "reason", "message"}`` on refusal — messages are
 user-graceful, never stack traces.
 """
@@ -63,6 +66,8 @@ from sqlglot import exp
 from sqlglot.errors import ParseError
 
 from .config import Config
+from .credential import read_credential
+from .oracle import _is_auth_error
 from .query_context import (
     QueryContextRefusal,
     canonical_bytes,
@@ -80,6 +85,7 @@ RefusalReason = Literal[
     "sql_parse_failed",
     "sql_not_select_only",
     "agent_sql_object_out_of_scope",
+    "query_identity_stamp_failed",
     "query_execution_failed",
 ]
 
@@ -403,23 +409,53 @@ async def _execute(
     *,
     cfg: Config,
     proxy_db_identity: str,
+    verified_subject: str,
     bounded_sql: str,
     effective: int,
     timeout_s: float,
     connect: Callable[..., Awaitable[Any]],
 ) -> dict[str, Any]:
     """The Oracle leg: a DEDICATED proxy-authenticated connection — the
-    session runs AS ``proxy_db_identity``; its grants are the engine
-    backstop. Never the shared metadata pool (identity must not bleed
-    across pooled sessions)."""
-    conn = await connect(
-        user=f"{cfg.oracle_user}[{proxy_db_identity}]",
-        password=cfg.oracle_password,
-        dsn=cfg.oracle_dsn,
-    )
+    session runs AS ``proxy_db_identity``; its grants are the engine backstop.
+    The verified human subject is stamped before user SQL. Never the shared
+    metadata pool (identity must not bleed across pooled sessions)."""
+    if len(verified_subject.encode("utf-8")) > 64:
+        return _refusal(
+            "query_identity_stamp_failed",
+            "the verified subject exceeds Oracle's 64-byte CLIENT_IDENTIFIER bound",
+        )
+
+    credential = read_credential(cfg.oracle_password_file)
+    try:
+        conn = await connect(
+            user=f"{cfg.oracle_user}[{proxy_db_identity}]",
+            password=credential.password,
+            dsn=cfg.oracle_dsn,
+        )
+    except Exception as exc:
+        if not _is_auth_error(exc):
+            raise
+        credential = read_credential(cfg.oracle_password_file)
+        conn = await connect(
+            user=f"{cfg.oracle_user}[{proxy_db_identity}]",
+            password=credential.password,
+            dsn=cfg.oracle_dsn,
+        )
     try:
         conn.call_timeout = int(timeout_s * 1000)
         with conn.cursor() as cur:
+            try:
+                await cur.callproc("dbms_session.set_identifier", [verified_subject])
+            except Exception as exc:
+                logger.warning(
+                    "readonly_query.identity_stamp_failed",
+                    extra={"exception_class": type(exc).__name__},
+                )
+                return _refusal(
+                    "query_identity_stamp_failed",
+                    "the database session could not be stamped with the verified "
+                    "subject; refusing before user SQL",
+                )
             await cur.execute(bounded_sql)
             columns = [d[0] for d in cur.description] if cur.description else []
             fetched = await cur.fetchall()
@@ -433,6 +469,7 @@ async def _execute(
         # the bound is enforced IN the SQL, so a full page means the result
         # MAY have been cut (it can also be an exact fit — documented).
         "truncated": len(rows) >= effective,
+        "credential_rotation_ref": credential.rotation_ref,
     }
 
 
@@ -534,18 +571,18 @@ async def run(
         return await _execute(
             cfg=cfg,
             proxy_db_identity=claims.proxy_db_identity,
+            verified_subject=claims.sub,
             bounded_sql=bounded_sql,
             effective=effective,
             timeout_s=timeout_s,
             connect=connect,
         )
     except Exception as exc:
-        # Operator-axis diagnostic only (exc_info); the envelope carries the
-        # exception CLASS name at most — never str(exc), never a stack trace.
+        # Value-free operator diagnostic: the credential and driver text never
+        # enter logs. The envelope likewise carries the class name at most.
         logger.warning(
             "readonly_query.execution_failed",
             extra={"exception_class": type(exc).__name__},
-            exc_info=True,
         )
         return _refusal(
             "query_execution_failed",
