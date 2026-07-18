@@ -26,8 +26,8 @@ def _pyproject() -> dict:
     return tomllib.loads((_ROOT / "pyproject.toml").read_text())
 
 
-def test_version_is_0_5_0() -> None:
-    assert _pyproject()["project"]["version"] == "0.5.0"
+def test_version_is_0_5_1() -> None:
+    assert _pyproject()["project"]["version"] == "0.5.1"
 
 
 def test_sqlglot_pinned_pure_python() -> None:

@@ -8,6 +8,7 @@ refusal arm is proven to short-circuit BEFORE any connection is attempted
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import pathlib
@@ -35,6 +36,10 @@ _SCOPE = "retail_analytics"
 _OBJECTS = ["COGNIC.V_EMPLOYEE_DIRECTORY"]
 _CREDENTIAL_VALUE = "fixture-only-query-credential"
 _ROTATION_REF = "2026-07-18T00:00:00+00:00"
+_KNOWN_SUBJECT = (
+    "https://cognic-proof-keycloak:8443/realms/proof-m85c#a0a8afbd-da88-58b8-b8b9-0d1c21734660"
+)
+_KNOWN_SUBJECT_REFERENCE = "b1dea4fecb0608c01ae77fe6e217c2545443801b2155c22eee46dad7bcc650f0"
 
 
 def _cfg(oracle_password_file: str = "/run/secrets/oracle-password") -> Config:
@@ -502,18 +507,53 @@ class TestArm6And7Execution:
         assert connect.calls[0]["password"] == _CREDENTIAL_VALUE
         assert connect.calls[0]["dsn"] == "localhost:1521/XEPDB1"
 
-    async def test_verified_subject_is_stamped_before_user_sql(
+    async def test_verified_subject_reference_is_stamped_before_user_sql(
         self, keys_env: None, keypair: tuple[bytes, bytes]
     ) -> None:
         connect = _ConnectRecorder(rows=[], description=[])
 
-        result = await _call(token=_minted(keypair), connect=connect)
+        result = await _call(token=_minted(keypair, sub=_KNOWN_SUBJECT), connect=connect)
 
         assert result["ok"] is True
         assert connect.conns[0].cursor().operations == [
-            ("callproc", "dbms_session.set_identifier", ("analyst.amir",)),
+            ("callproc", "dbms_session.set_identifier", (_KNOWN_SUBJECT_REFERENCE,)),
             ("execute", connect.conns[0].cursor().executed[0]),
         ]
+
+    @pytest.mark.parametrize(
+        "subject",
+        ["a", "analyst.amir", "é" * 100, _KNOWN_SUBJECT],
+    )
+    async def test_subject_reference_is_always_64_lowercase_hex(
+        self,
+        keys_env: None,
+        keypair: tuple[bytes, bytes],
+        subject: str,
+    ) -> None:
+        connect = _ConnectRecorder(rows=[], description=[])
+
+        result = await _call(token=_minted(keypair, sub=subject), connect=connect)
+
+        assert result["ok"] is True
+        stamped = connect.conns[0].cursor().operations[0][2][0]
+        assert len(stamped) == 64
+        assert set(stamped) <= set("0123456789abcdef")
+
+    async def test_full_subject_never_reaches_set_identifier(
+        self, keys_env: None, keypair: tuple[bytes, bytes]
+    ) -> None:
+        connect = _ConnectRecorder(rows=[], description=[])
+
+        result = await _call(token=_minted(keypair, sub=_KNOWN_SUBJECT), connect=connect)
+
+        assert result["ok"] is True
+        callproc = connect.conns[0].cursor().operations[0]
+        assert callproc == (
+            "callproc",
+            "dbms_session.set_identifier",
+            (_KNOWN_SUBJECT_REFERENCE,),
+        )
+        assert _KNOWN_SUBJECT not in repr(callproc)
 
     async def test_identity_stamp_failure_refuses_before_sql_and_closes_connection(
         self,
@@ -529,21 +569,17 @@ class TestArm6And7Execution:
             result = await _call(token=_minted(keypair), connect=connect)
 
         _assert_refusal(result, "query_identity_stamp_failed")
+        assert connect.conns[0].cursor().operations == [
+            (
+                "callproc",
+                "dbms_session.set_identifier",
+                (hashlib.sha256(b"analyst.amir").hexdigest(),),
+            )
+        ]
         assert connect.conns[0].cursor().executed == []
         assert connect.conns[0].closed is True
         assert _CREDENTIAL_VALUE not in repr(result)
         assert all(_CREDENTIAL_VALUE not in repr(vars(record)) for record in caplog.records)
-
-    async def test_oversized_verified_subject_refuses_before_connect(
-        self, keys_env: None, keypair: tuple[bytes, bytes]
-    ) -> None:
-        connect = _ConnectRecorder()
-        token = _minted(keypair, sub="é" * 33)
-
-        result = await _call(token=token, connect=connect)
-
-        _assert_refusal(result, "query_identity_stamp_failed")
-        assert connect.calls == []
 
     async def test_success_rotation_reference_comes_from_file_mtime(
         self,

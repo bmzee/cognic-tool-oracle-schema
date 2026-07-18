@@ -221,5 +221,5 @@ class TestKernelTokenThroughEnvelope:
         assert connect.conns[0].cursor().operations[0] == (
             "callproc",
             "dbms_session.set_identifier",
-            (claims.sub,),
+            (hashlib.sha256(claims.sub.encode("utf-8")).hexdigest(),),
         )

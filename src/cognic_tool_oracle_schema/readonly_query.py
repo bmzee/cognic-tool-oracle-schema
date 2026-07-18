@@ -37,7 +37,9 @@ until every one has passed:
      ``user="APP_USER[<proxy_db_identity from the token>]"``: the session
      RUNS AS that DB identity, whose grants (governed views only) are the
      engine backstop. Before user SQL, ``DBMS_SESSION.SET_IDENTIFIER`` stamps
-     the verified human subject. Deliberately NOT the shared metadata pool —
+     the 64-hex SHA-256 reference of the verified issuer-qualified human
+     subject. The signed query context retains the full subject; audit readers
+     correlate by recomputation. Deliberately NOT the shared metadata pool —
      proxy identity must never bleed across pooled sessions. Stamp failure →
      ``query_identity_stamp_failed``; any other DB-side failure →
      ``query_execution_failed`` (exception CLASS name at most, never text).
@@ -417,13 +419,10 @@ async def _execute(
 ) -> dict[str, Any]:
     """The Oracle leg: a DEDICATED proxy-authenticated connection — the
     session runs AS ``proxy_db_identity``; its grants are the engine backstop.
-    The verified human subject is stamped before user SQL. Never the shared
-    metadata pool (identity must not bleed across pooled sessions)."""
-    if len(verified_subject.encode("utf-8")) > 64:
-        return _refusal(
-            "query_identity_stamp_failed",
-            "the verified subject exceeds Oracle's 64-byte CLIENT_IDENTIFIER bound",
-        )
+    A uniform 64-hex SHA-256 reference of the verified human subject is stamped
+    before user SQL. Never the shared metadata pool (identity must not bleed
+    across pooled sessions)."""
+    subject_reference = hashlib.sha256(verified_subject.encode("utf-8")).hexdigest()
 
     credential = read_credential(cfg.oracle_password_file)
     try:
@@ -445,7 +444,7 @@ async def _execute(
         conn.call_timeout = int(timeout_s * 1000)
         with conn.cursor() as cur:
             try:
-                await cur.callproc("dbms_session.set_identifier", [verified_subject])
+                await cur.callproc("dbms_session.set_identifier", [subject_reference])
             except Exception as exc:
                 logger.warning(
                     "readonly_query.identity_stamp_failed",
