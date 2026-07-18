@@ -8,7 +8,7 @@ def _cfg(
     *,
     oracle_dsn: str = "localhost:1521/XEPDB1",
     oracle_user: str = "ro_user",
-    oracle_password: str = "pw",
+    oracle_password_file: str = "/run/secrets/oracle-password",
     allowed_owners: frozenset[str] = frozenset(),
     max_rows: int = 200,
     pool_max: int = 4,
@@ -22,7 +22,7 @@ def _cfg(
     return Config(
         oracle_dsn=oracle_dsn,
         oracle_user=oracle_user,
-        oracle_password=oracle_password,
+        oracle_password_file=oracle_password_file,
         allowed_owners=allowed_owners,
         max_rows=max_rows,
         pool_max=pool_max,
@@ -104,6 +104,10 @@ def test_guard_owner_refuses_outside_allowlist():
 async def test_fetch_sets_truncated_when_over_limit(monkeypatch):
     # fake pool/cursor returning limit+1 rows; assert truncated True + rows trimmed to limit
     rows = await oracle.fetch(
-        "select 1 from dual", {}, limit=2, _pool=_FakePool([("a",), ("b",), ("c",)])
+        "select 1 from dual",
+        {},
+        limit=2,
+        cfg=_cfg(),
+        _pool=_FakePool([("a",), ("b",), ("c",)]),
     )
     assert rows == ([("a",), ("b",)], True)

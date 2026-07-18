@@ -8,14 +8,19 @@ refusal arm is proven to short-circuit BEFORE any connection is attempted
 
 from __future__ import annotations
 
+import logging
+import os
 import pathlib
+from datetime import UTC, datetime
 from typing import Any
+from typing import get_args
 
 import pytest
 
-from cognic_tool_oracle_schema import readonly_query
+from cognic_tool_oracle_schema import credential, readonly_query
 from cognic_tool_oracle_schema.config import Config
-from cognic_tool_oracle_schema.readonly_query import ReplayCache
+from cognic_tool_oracle_schema.credential import CredentialRead
+from cognic_tool_oracle_schema.readonly_query import RefusalReason, ReplayCache
 from tests._token_helpers import (
     NOW,
     args_sha256_for,
@@ -28,13 +33,15 @@ from tests._token_helpers import (
 _SQL = "SELECT full_name FROM cognic.v_employee_directory"
 _SCOPE = "retail_analytics"
 _OBJECTS = ["COGNIC.V_EMPLOYEE_DIRECTORY"]
+_CREDENTIAL_VALUE = "fixture-only-query-credential"
+_ROTATION_REF = "2026-07-18T00:00:00+00:00"
 
 
-def _cfg() -> Config:
+def _cfg(oracle_password_file: str = "/run/secrets/oracle-password") -> Config:
     return Config(
         oracle_dsn="localhost:1521/XEPDB1",
         oracle_user="app_user",
-        oracle_password="pw",
+        oracle_password_file=oracle_password_file,
         allowed_owners=frozenset(),
         max_rows=200,
         pool_max=4,
@@ -58,11 +65,30 @@ def keys_env(
     write_keys_env(tmp_path, monkeypatch, keypair[1])
 
 
+@pytest.fixture(autouse=True)
+def credential_reader(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        readonly_query,
+        "read_credential",
+        lambda _path: CredentialRead(
+            password=_CREDENTIAL_VALUE,
+            rotation_ref=_ROTATION_REF,
+        ),
+    )
+
+
 class _FakeCursor:
-    def __init__(self, rows: list[tuple], description: list[tuple]) -> None:
+    def __init__(
+        self,
+        rows: list[tuple],
+        description: list[tuple],
+        callproc_raises: Exception | None = None,
+    ) -> None:
         self._rows = rows
         self.description = description
+        self.callproc_raises = callproc_raises
         self.executed: list[str] = []
+        self.operations: list[tuple[Any, ...]] = []
 
     def __enter__(self) -> "_FakeCursor":
         return self
@@ -71,7 +97,13 @@ class _FakeCursor:
         return None
 
     async def execute(self, sql: str) -> None:
+        self.operations.append(("execute", sql))
         self.executed.append(sql)
+
+    async def callproc(self, name: str, parameters: list[str]) -> None:
+        self.operations.append(("callproc", name, tuple(parameters)))
+        if self.callproc_raises is not None:
+            raise self.callproc_raises
 
     async def fetchall(self) -> list[tuple]:
         return self._rows
@@ -97,19 +129,28 @@ class _ConnectRecorder:
         self,
         rows: list[tuple] | None = None,
         description: list[tuple] | None = None,
-        raises: Exception | None = None,
+        raises: Exception | list[Exception | None] | None = None,
+        callproc_raises: Exception | None = None,
     ) -> None:
         self.rows = rows if rows is not None else []
         self.description = description if description is not None else []
         self.raises = raises
+        self.callproc_raises = callproc_raises
         self.calls: list[dict[str, Any]] = []
         self.conns: list[_FakeConn] = []
 
     async def __call__(self, **kwargs: Any) -> _FakeConn:
         self.calls.append(kwargs)
-        if self.raises is not None:
-            raise self.raises
-        conn = _FakeConn(_FakeCursor(self.rows, self.description))
+        failure = self.raises[len(self.calls) - 1] if isinstance(self.raises, list) else self.raises
+        if failure is not None:
+            raise failure
+        conn = _FakeConn(
+            _FakeCursor(
+                self.rows,
+                self.description,
+                callproc_raises=self.callproc_raises,
+            )
+        )
         self.conns.append(conn)
         return conn
 
@@ -140,9 +181,10 @@ async def _call(
     max_rows: int | None = None,
     replay: ReplayCache | None = None,
     now: int = NOW,
+    cfg: Config | None = None,
 ) -> dict[str, Any]:
     return await readonly_query.run(
-        cfg=_cfg(),
+        cfg=cfg if cfg is not None else _cfg(),
         scope_id=scope_id,
         sql=sql,
         max_rows=max_rows,
@@ -160,6 +202,19 @@ def _assert_refusal(result: dict[str, Any], reason: str) -> None:
     # graceful — never a traceback dump
     assert "Traceback" not in result["message"]
     assert set(result.keys()) == {"ok", "reason", "message"}
+
+
+def test_refusal_reason_vocabulary_is_closed() -> None:
+    assert get_args(RefusalReason) == (
+        "query_context_missing_or_invalid",
+        "query_context_replayed",
+        "query_context_args_mismatch",
+        "sql_parse_failed",
+        "sql_not_select_only",
+        "agent_sql_object_out_of_scope",
+        "query_identity_stamp_failed",
+        "query_execution_failed",
+    )
 
 
 # --- arm 1: verify ---------------------------------------------------------------
@@ -412,6 +467,7 @@ class TestArm6And7Execution:
             "rows": [{"FULL_NAME": "Ada Lovelace"}, {"FULL_NAME": "Alan Turing"}],
             "row_count": 2,
             "truncated": False,
+            "credential_rotation_ref": _ROTATION_REF,
         }
 
     async def test_executed_sql_carries_fetch_first_bound(
@@ -443,8 +499,105 @@ class TestArm6And7Execution:
         result = await _call(token=_minted(keypair), connect=connect)
         assert result["ok"] is True
         assert connect.calls[0]["user"] == "app_user[AGENT_RO]"
-        assert connect.calls[0]["password"] == "pw"
+        assert connect.calls[0]["password"] == _CREDENTIAL_VALUE
         assert connect.calls[0]["dsn"] == "localhost:1521/XEPDB1"
+
+    async def test_verified_subject_is_stamped_before_user_sql(
+        self, keys_env: None, keypair: tuple[bytes, bytes]
+    ) -> None:
+        connect = _ConnectRecorder(rows=[], description=[])
+
+        result = await _call(token=_minted(keypair), connect=connect)
+
+        assert result["ok"] is True
+        assert connect.conns[0].cursor().operations == [
+            ("callproc", "dbms_session.set_identifier", ("analyst.amir",)),
+            ("execute", connect.conns[0].cursor().executed[0]),
+        ]
+
+    async def test_identity_stamp_failure_refuses_before_sql_and_closes_connection(
+        self,
+        keys_env: None,
+        keypair: tuple[bytes, bytes],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        connect = _ConnectRecorder(
+            callproc_raises=RuntimeError(_CREDENTIAL_VALUE),
+        )
+
+        with caplog.at_level(logging.WARNING, logger=readonly_query.__name__):
+            result = await _call(token=_minted(keypair), connect=connect)
+
+        _assert_refusal(result, "query_identity_stamp_failed")
+        assert connect.conns[0].cursor().executed == []
+        assert connect.conns[0].closed is True
+        assert _CREDENTIAL_VALUE not in repr(result)
+        assert all(_CREDENTIAL_VALUE not in repr(vars(record)) for record in caplog.records)
+
+    async def test_oversized_verified_subject_refuses_before_connect(
+        self, keys_env: None, keypair: tuple[bytes, bytes]
+    ) -> None:
+        connect = _ConnectRecorder()
+        token = _minted(keypair, sub="é" * 33)
+
+        result = await _call(token=token, connect=connect)
+
+        _assert_refusal(result, "query_identity_stamp_failed")
+        assert connect.calls == []
+
+    async def test_success_rotation_reference_comes_from_file_mtime(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        keys_env: None,
+        keypair: tuple[bytes, bytes],
+    ) -> None:
+        credential_path = tmp_path / "password"
+        credential_path.write_text(_CREDENTIAL_VALUE, encoding="utf-8")
+        mtime = 1_767_225_600
+        os.utime(credential_path, (mtime, mtime))
+        monkeypatch.setattr(readonly_query, "read_credential", credential.read_credential)
+        connect = _ConnectRecorder()
+
+        result = await _call(
+            token=_minted(keypair),
+            connect=connect,
+            cfg=_cfg(str(credential_path)),
+        )
+
+        assert result["ok"] is True
+        assert (
+            result["credential_rotation_ref"] == datetime.fromtimestamp(mtime, tz=UTC).isoformat()
+        )
+
+    async def test_auth_failure_rereads_once_retries_once_then_refuses(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        keys_env: None,
+        keypair: tuple[bytes, bytes],
+    ) -> None:
+        class _OracleError:
+            full_code = "ORA-01017"
+
+        reads: list[str] = []
+
+        def _read(path: str) -> CredentialRead:
+            reads.append(path)
+            return CredentialRead(
+                password=f"attempt-{len(reads)}",
+                rotation_ref=f"rotation-{len(reads)}",
+            )
+
+        monkeypatch.setattr(readonly_query, "read_credential", _read)
+        connect = _ConnectRecorder(
+            raises=[RuntimeError(_OracleError()), RuntimeError(_OracleError())]
+        )
+
+        result = await _call(token=_minted(keypair), connect=connect)
+
+        _assert_refusal(result, "query_execution_failed")
+        assert len(reads) == 2
+        assert len(connect.calls) == 2
 
     async def test_call_timeout_applied_and_connection_closed(
         self,

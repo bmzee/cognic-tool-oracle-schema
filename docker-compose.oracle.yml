@@ -11,7 +11,7 @@
 #   COGNIC_RUN_ORACLE_INTEGRATION=1 \
 #     COGNIC_ORACLE_DSN=localhost:1521/XEPDB1 \
 #     COGNIC_ORACLE_USER=cognic \
-#     COGNIC_ORACLE_PASSWORD=cognic_dev_only \
+#     COGNIC_ORACLE_PASSWORD_FILE=/path/to/oracle-password \
 #     .venv/bin/python -m pytest tests/integration -m oracle -q
 #   docker compose -f docker-compose.oracle.yml down -v
 #

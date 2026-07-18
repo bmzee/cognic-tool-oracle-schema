@@ -28,7 +28,7 @@ def _cfg(
     *,
     oracle_dsn: str = "localhost:1521/XEPDB1",
     oracle_user: str = "ro_user",
-    oracle_password: str = "pw",
+    oracle_password_file: str = "/run/secrets/oracle-password",
     allowed_owners: frozenset[str] = frozenset(),
     max_rows: int = 200,
     pool_max: int = 4,
@@ -42,7 +42,7 @@ def _cfg(
     return Config(
         oracle_dsn=oracle_dsn,
         oracle_user=oracle_user,
-        oracle_password=oracle_password,
+        oracle_password_file=oracle_password_file,
         allowed_owners=allowed_owners,
         max_rows=max_rows,
         pool_max=pool_max,
@@ -57,7 +57,7 @@ def _cfg(
 class _FetchRecorder:
     """Async stand-in for ``tools.fetch``.
 
-    Records every ``(sql, binds, limit)`` call and returns a caller-supplied
+    Records every ``(sql, binds, limit, cfg)`` call and returns a caller-supplied
     ``(rows, truncated)`` tuple — the same shape the real ``oracle.fetch``
     yields.
     """
@@ -67,8 +67,8 @@ class _FetchRecorder:
         self.truncated = truncated
         self.calls = []
 
-    async def __call__(self, sql, binds, *, limit):
-        self.calls.append((sql, binds, limit))
+    async def __call__(self, sql, binds, *, limit, cfg):
+        self.calls.append((sql, binds, limit, cfg))
         return self.rows, self.truncated
 
     @property
@@ -82,6 +82,10 @@ class _FetchRecorder:
     @property
     def limit(self):
         return self.calls[-1][2]
+
+    @property
+    def cfg(self):
+        return self.calls[-1][3]
 
 
 def _install_fetch(monkeypatch, rows=(), truncated=False) -> _FetchRecorder:
@@ -100,6 +104,7 @@ async def test_list_schemas_no_allowlist_uses_all_tables_and_1_eq_1(monkeypatch)
     assert "all_tables" in rec.sql  # (a) correct view
     assert "1 = 1" in rec.sql  # (d) no allow-list → unconstrained predicate
     assert rec.binds == {}
+    assert rec.cfg.oracle_password_file == "/run/secrets/oracle-password"
     assert out == {"items": [{"owner": "HR"}, {"owner": "SALES"}], "truncated": False}
 
 

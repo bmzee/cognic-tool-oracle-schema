@@ -52,20 +52,25 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 
 @pytest.fixture
-def cfg() -> Config:
+def cfg(tmp_path: pathlib.Path) -> Config:
     """A Config wired to the integration Oracle from the integration env.
 
     Built directly (not via ``Config.from_env``) so the only env the integration
-    run requires is the Oracle connection (DSN / USER / PASSWORD): the OAuth
+    run requires is the Oracle connection (DSN / USER / PASSWORD_FILE): the OAuth
     fields are irrelevant to the pool and the tools. Mirrors the unit suite's
     ``_cfg`` helper shape. Defaults match docker-compose.oracle.yml so the
     provided compose works out of the box.
     """
     owners_raw = os.environ.get("COGNIC_ORACLE_ALLOWED_OWNERS", "")
+    configured_password_file = os.environ.get("COGNIC_ORACLE_PASSWORD_FILE")
+    if configured_password_file is None:
+        password_file = tmp_path / "oracle-password"
+        password_file.write_text("cognic_dev_only", encoding="utf-8")
+        configured_password_file = str(password_file)
     return Config(
         oracle_dsn=os.environ.get("COGNIC_ORACLE_DSN", "localhost:1521/XEPDB1"),
         oracle_user=os.environ.get("COGNIC_ORACLE_USER", "cognic"),
-        oracle_password=os.environ.get("COGNIC_ORACLE_PASSWORD", "cognic_dev_only"),
+        oracle_password_file=configured_password_file,
         allowed_owners=frozenset(
             owner.strip().upper() for owner in owners_raw.split(",") if owner.strip()
         ),

@@ -84,7 +84,7 @@ async def list_schemas(*, cfg: Config) -> dict:
     """List distinct schema owners (constrained to the allow-list when set)."""
     pred, binds = _owner_predicate("owner", cfg)
     sql = _LIST_SCHEMAS.format(owner_filter=pred)
-    rows, truncated = await fetch(sql, binds, limit=cfg.max_rows)
+    rows, truncated = await fetch(sql, binds, limit=cfg.max_rows, cfg=cfg)
     return {"items": [{"owner": r[0]} for r in rows], "truncated": truncated}
 
 
@@ -94,6 +94,7 @@ async def list_tables(*, cfg: Config, owner: str) -> dict:
         _LIST_TABLES,
         {"owner": guard_owner(owner, cfg)},
         limit=cfg.max_rows,
+        cfg=cfg,
     )
     items = [{"table_name": r[0], "comments": r[1]} for r in rows]
     return {"items": items, "truncated": truncated}
@@ -105,6 +106,7 @@ async def describe_table(*, cfg: Config, owner: str, table: str) -> dict:
         _DESCRIBE_TABLE,
         {"owner": guard_owner(owner, cfg), "tname": table.strip().upper()},
         limit=cfg.max_rows,
+        cfg=cfg,
     )
     columns = [
         {
@@ -124,7 +126,7 @@ async def find_columns(*, cfg: Config, name_pattern: str, owner: str | None = No
     pred, owner_binds = _owner_predicate("owner", cfg, owner=owner)
     sql = _FIND_COLUMNS.format(owner_filter=pred)
     binds = {"pat": name_pattern, **owner_binds}
-    rows, truncated = await fetch(sql, binds, limit=cfg.max_rows)
+    rows, truncated = await fetch(sql, binds, limit=cfg.max_rows, cfg=cfg)
     items = [
         {"owner": r[0], "table_name": r[1], "column_name": r[2], "data_type": r[3]} for r in rows
     ]
@@ -139,7 +141,7 @@ async def list_relationships(*, cfg: Config, owner: str, table: str | None = Non
         table_filter = "AND c.table_name = :tname"
         binds["tname"] = table.strip().upper()
     sql = _LIST_RELATIONSHIPS.format(table_filter=table_filter)
-    rows, truncated = await fetch(sql, binds, limit=cfg.max_rows)
+    rows, truncated = await fetch(sql, binds, limit=cfg.max_rows, cfg=cfg)
     items = [
         {
             "constraint_name": r[0],
@@ -161,6 +163,7 @@ async def get_constraints(*, cfg: Config, owner: str, table: str) -> dict:
         _GET_CONSTRAINTS,
         {"owner": guard_owner(owner, cfg), "tname": table.strip().upper()},
         limit=cfg.max_rows,
+        cfg=cfg,
     )
     items = [
         {

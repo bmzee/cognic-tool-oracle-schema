@@ -133,7 +133,7 @@ the HTTP bind + URLs in `server.py`.
 |---|---|---|
 | `COGNIC_ORACLE_DSN` | *(required)* | Oracle DSN, e.g. `localhost:1521/XEPDB1`. Deployment config — **not** manifest egress. |
 | `COGNIC_ORACLE_USER` | *(required)* | Read-only Oracle account; `ALL_*` visibility follows owned + granted objects (see operator notes). |
-| `COGNIC_ORACLE_PASSWORD` | *(required)* | Password for that account. |
+| `COGNIC_ORACLE_PASSWORD_FILE` | *(required)* | Path to the operator-injected password file. The file is read freshly for governed queries; `COGNIC_ORACLE_PASSWORD` is refused in v0.5.0. |
 | `COGNIC_ORACLE_ALLOWED_OWNERS` | *(unset = trust the DB grant)* | Comma-separated schema-owner allow-list; upper-cased. When set, every tool additionally refuses owners not in it. |
 | `COGNIC_ORACLE_MAX_ROWS` | `200` | Per-tool output cap; clamped to `[1, 1000]` (hard max `1000`). Sets `truncated` at the boundary. |
 | `COGNIC_ORACLE_POOL_MAX` | `4` | Max connections in the async pool. |
@@ -161,7 +161,7 @@ env above is set.
 COGNIC_AUTH_MODE=dev_insecure COGNIC_ENV=dev \
   COGNIC_ORACLE_DSN=localhost:1521/XEPDB1 \
   COGNIC_ORACLE_USER=cognic \
-  COGNIC_ORACLE_PASSWORD=cognic_dev_only \
+  COGNIC_ORACLE_PASSWORD_FILE=/path/to/oracle-password \
   python -m cognic_tool_oracle_schema.server
 ```
 
@@ -186,7 +186,7 @@ docker compose -f docker-compose.oracle.yml up -d   # first boot ~3-5 min
 COGNIC_RUN_ORACLE_INTEGRATION=1 \
   COGNIC_ORACLE_DSN=localhost:1521/XEPDB1 \
   COGNIC_ORACLE_USER=cognic \
-  COGNIC_ORACLE_PASSWORD=cognic_dev_only \
+  COGNIC_ORACLE_PASSWORD_FILE=/path/to/oracle-password \
   pytest tests/integration -m oracle -q
 docker compose -f docker-compose.oracle.yml down -v
 ```

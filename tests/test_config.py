@@ -5,7 +5,7 @@ from cognic_tool_oracle_schema.config import Config, ConfigError
 def _set_min_oracle_env(monkeypatch):
     """Set the minimal env for ``Config.from_env()`` to SUCCEED by default.
 
-    Sets DSN/USER/PASSWORD plus ``COGNIC_AUTH_MODE=dev_insecure`` +
+    Sets DSN/USER/PASSWORD_FILE plus ``COGNIC_AUTH_MODE=dev_insecure`` +
     ``COGNIC_ENV=dev`` so the ``jwt``-mode oauth-triple requirement does not
     fire. Optional vars that could leak from the ambient environment and break
     a success-path test are defensively cleared; individual failure tests
@@ -13,7 +13,8 @@ def _set_min_oracle_env(monkeypatch):
     """
     monkeypatch.setenv("COGNIC_ORACLE_DSN", "localhost:1521/XEPDB1")
     monkeypatch.setenv("COGNIC_ORACLE_USER", "ro_user")
-    monkeypatch.setenv("COGNIC_ORACLE_PASSWORD", "pw")
+    monkeypatch.setenv("COGNIC_ORACLE_PASSWORD_FILE", "/run/secrets/oracle-password")
+    monkeypatch.delenv("COGNIC_ORACLE_PASSWORD", raising=False)
     monkeypatch.setenv("COGNIC_AUTH_MODE", "dev_insecure")
     monkeypatch.setenv("COGNIC_ENV", "dev")
     for _leak in (
@@ -32,7 +33,7 @@ def test_from_env_parses_oracle_and_auth(monkeypatch):
     for k, v in {
         "COGNIC_ORACLE_DSN": "localhost:1521/XEPDB1",
         "COGNIC_ORACLE_USER": "ro_user",
-        "COGNIC_ORACLE_PASSWORD": "pw",
+        "COGNIC_ORACLE_PASSWORD_FILE": "/run/secrets/oracle-password",
         "COGNIC_ORACLE_ALLOWED_OWNERS": "HR, SALES",
         "COGNIC_ORACLE_MAX_ROWS": "50",
         "COGNIC_OAUTH_ISSUER": "https://as.example/",
@@ -43,6 +44,7 @@ def test_from_env_parses_oracle_and_auth(monkeypatch):
     }.items():
         monkeypatch.setenv(k, v)
     cfg = Config.from_env()
+    assert cfg.oracle_password_file == "/run/secrets/oracle-password"
     assert cfg.allowed_owners == frozenset({"HR", "SALES"})
     assert cfg.max_rows == 50
     assert cfg.required_scopes == frozenset({"oracle_schema.read"})
@@ -76,4 +78,23 @@ def test_required_scopes_cannot_be_empty(monkeypatch):
     monkeypatch.setenv("COGNIC_ENV", "dev")
     monkeypatch.setenv("COGNIC_REQUIRED_SCOPES", " , ")
     with pytest.raises(ConfigError):
+        Config.from_env()
+
+
+def test_password_file_is_required(monkeypatch):
+    _set_min_oracle_env(monkeypatch)
+    monkeypatch.delenv("COGNIC_ORACLE_PASSWORD_FILE")
+
+    with pytest.raises(ConfigError, match="missing required env COGNIC_ORACLE_PASSWORD_FILE"):
+        Config.from_env()
+
+
+@pytest.mark.parametrize("password_file_present", [False, True])
+def test_legacy_password_env_is_always_refused(monkeypatch, password_file_present):
+    _set_min_oracle_env(monkeypatch)
+    if not password_file_present:
+        monkeypatch.delenv("COGNIC_ORACLE_PASSWORD_FILE")
+    monkeypatch.setenv("COGNIC_ORACLE_PASSWORD", "retired-channel-value")
+
+    with pytest.raises(ConfigError, match="COGNIC_ORACLE_PASSWORD was removed in v0.5.0"):
         Config.from_env()
